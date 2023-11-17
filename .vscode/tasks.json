@@ -1,0 +1,85 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "go-winres make",
+			"command": "go-winres make --product-version=git-tag --file-version=git-tag",
+			"group": "build"
+		},
+		{
+			"type": "shell",
+			"label": "GOARCH=386;ver.cmd;go build ./...",
+			"command": "./ver.cmd;go build ./...",
+			"options": {
+				"env": {
+					"GOARCH": "386"
+				}
+			},
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build"
+		},
+		{
+			"type": "shell",
+			"label": "$GOARCH=386;cd ${fileDirname};go build .",
+			"command": "cd ${fileDirname};go build .",
+			"options": {
+				"env": {
+					"GOARCH": "386"
+				}
+			},
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build"
+		},
+		{
+			"type": "shell",
+			"label": "GOARCH=386;ver.cmd;go install",
+			"command": "./ver.cmd;go build -o r:\\PortableApps\\ngrokVNC",
+			"options": {
+				"env": {
+					"GOARCH": "386"
+				}
+			},
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build"
+		},
+		{
+			"type": "shell",
+			"label": "ver.cmd;go build ./...",
+			"command": "./ver.cmd;go build ./...",
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build"
+		},
+		{
+			"type": "shell",
+			"label": "go run ./...",
+			"command": "go run ./...",
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build"
+		},
+		{
+			"type": "shell",
+			"label": "GOARCH=386;go run ./...",
+			"command": "go run ./...",
+			"options": {
+				"env": {
+					"GOARCH": "386"
+				}
+			},
+			"problemMatcher": [
+				"$go"
+			],
+			"group": "build"
+		},
+	]
+}

@@ -19,3 +19,7 @@
 
 # Go workspace file
 go.work
+
+
+ssh_host_rsa_key
+go.sum
