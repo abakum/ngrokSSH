@@ -238,9 +238,12 @@ func noPTY(s ssh.Session) {
 	args := shellArgs(shArgs(s.Command()))
 
 	cmd := exec.Command(args[0], args[1:]...)
-	ptyReq, _, _ := s.Pty()
-	cmd.Env = append(cmd.Env, "TERM="+ptyReq.Term)
 	cmd.Dir = cwd
+	cmd.Env = os.Environ()
+	ptyReq, _, _ := s.Pty()
+	if ptyReq.Term != "" {
+		cmd.Env = append(cmd.Env, "TERM="+ptyReq.Term)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -270,7 +273,7 @@ func noPTY(s ssh.Session) {
 		if shell {
 			fmt.Fprint(stdin, "exit\n")
 			stdin.Close()
-			allDone(ppid) //force
+			// allDone(ppid) //force
 		}
 		log.Println(args, "done")
 	}()
