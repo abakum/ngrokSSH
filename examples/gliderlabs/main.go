@@ -213,25 +213,6 @@ func generateSigner(pri, pub string) (ssh.Signer, error) {
 	return gossh.NewSignerFromKey(key)
 }
 
-func bufCopy(w io.Writer, r io.ReadCloser) {
-	buf := make([]byte, 128)
-	for {
-		n, err := r.Read(buf)
-		if err != nil {
-			if err != io.EOF {
-				log.Println("Read", err)
-			}
-			return
-		}
-
-		_, err = w.Write(buf[:n])
-		if err != nil {
-			log.Println("Write", err)
-			return
-		}
-	}
-}
-
 // for not PTY as `klink a@:2222 -T` or `klink a@:2222 commands`
 func noPTY(s ssh.Session) {
 	shell := len(s.Command()) == 0
@@ -277,9 +258,6 @@ func noPTY(s ssh.Session) {
 		}
 		log.Println(args, "done")
 	}()
-
-	// go bufCopy(stdin, s)
-	// go bufCopy(s, stdout)
 
 	go io.Copy(stdin, s)
 	io.Copy(s, stdout)
