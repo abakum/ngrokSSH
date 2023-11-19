@@ -23,12 +23,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"syscall"
 
 	"github.com/abakum/go-console"
 	"github.com/gliderlabs/ssh"
 	"github.com/pkg/sftp"
+	"github.com/xlab/closer"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -50,7 +49,15 @@ var (
 
 // logging sessions
 func SessionRequestCallback(s ssh.Session, requestType string) bool {
-	log.Println(s.RemoteAddr(), requestType)
+	if s == nil {
+		return false
+	}
+	ptyReq, _, isPty := s.Pty()
+	pr := ""
+	if isPty {
+		pr = fmt.Sprintf("%v", ptyReq)
+	}
+	log.Println(s.RemoteAddr(), requestType, s.Command(), pr)
 	return true
 }
 
@@ -77,6 +84,11 @@ func SubsystemHandlers(s ssh.Session) {
 }
 
 func main() {
+	defer closer.Close()
+	closer.Bind(func() {
+		allDone(os.Getpid())
+	})
+
 	ForwardedTCPHandler := &ssh.ForwardedTCPHandler{}
 
 	sshd := ssh.Server{
@@ -138,8 +150,8 @@ func main() {
 
 	// next for client keys
 	for _, akf := range []string{
-		filepath.Join(os.Getenv("AllUserProfile"), administratorsAuthorizedKeys),
-		filepath.Join(os.Getenv("UserProfile"), ".ssh", authorizedKeys),
+		filepath.Join(os.Getenv("ALLUSERSPROFILE"), administratorsAuthorizedKeys),
+		filepath.Join(os.Getenv("USERPROFILE"), ".ssh", authorizedKeys),
 		filepath.Join(cwd, authorizedKeys),
 	} {
 		kk := fileToAllowed(os.ReadFile(akf))
@@ -167,11 +179,12 @@ func main() {
 			authorizedKey := gossh.MarshalAuthorizedKey(s.PublicKey())
 			log.Println("used public key", string(authorizedKey))
 		}
-		cmdPTY(s)
+		shellOrExec(s)
 	})
 
 	log.Println("starting ssh server on", sshd.Addr)
 	log.Fatal(sshd.ListenAndServe())
+
 }
 
 // like ssh.generateSigner plus write key to files
@@ -200,27 +213,34 @@ func generateSigner(pri, pub string) (ssh.Signer, error) {
 	return gossh.NewSignerFromKey(key)
 }
 
-func psArgs(commands []string) (args []string) {
-	args = []string{"powershell", "-NoProfile", "-NoLogo"}
-	if len(commands) > 0 {
-		args = append(args,
-			"-NonInteractive",
-			"-Command")
-		args = append(args, commands...)
-	} else {
-		args = append(args, "-Mta") //for Win7
+func bufCopy(w io.Writer, r io.ReadCloser) {
+	buf := make([]byte, 128)
+	for {
+		n, err := r.Read(buf)
+		if err != nil {
+			if err != io.EOF {
+				log.Println("Read", err)
+			}
+			return
+		}
+
+		_, err = w.Write(buf[:n])
+		if err != nil {
+			log.Println("Write", err)
+			return
+		}
 	}
-	return
 }
 
-// for not PTY as klink a@:2222 -T or klink a@:2222 dir
-func powerShell(s ssh.Session) { // reqs <-chan *gossh.Request
-	args := psArgs(s.Command())
+// for not PTY as `klink a@:2222 -T` or `klink a@:2222 commands`
+func noPTY(s ssh.Session) {
+	shell := len(s.Command()) == 0
+	args := shellArgs(shArgs(s.Command()))
+
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: 0 +
-			// syscall.STARTF_USESTDHANDLES +
-			0}
+	ptyReq, _, _ := s.Pty()
+	cmd.Env = append(cmd.Env, "TERM="+ptyReq.Term)
+	cmd.Dir = cwd
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -241,107 +261,34 @@ func powerShell(s ssh.Session) { // reqs <-chan *gossh.Request
 		fmt.Fprint(s, "could not start", args, err)
 		return
 	}
-	log.Println(args)
-
-	// go gossh.DiscardRequests(reqs)
-	go func() {
-		buf := make([]byte, 128)
-		for {
-			n, err := stdout.Read(buf)
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("stdout.Read %s", err)
-				}
-				return
-			}
-
-			_, err = s.Write(buf[:n])
-			if err != nil {
-				log.Printf("s.Write %s", err)
-				return
-			}
-		}
-	}()
-
-	go func() {
-		buf := make([]byte, 128)
-		for {
-			n, err := s.Read(buf)
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("s.Read %s", err)
-				}
-				return
-			}
-
-			_, err = stdin.Write(buf[:n])
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("stdin.Write %s", err)
-				}
-				return
-			}
-
-		}
-	}()
+	ppid := cmd.Process.Pid
+	log.Println(args, ppid)
 
 	done := s.Context().Done()
 	go func() {
 		<-done
-		log.Println(args, "done")
-		if cmd != nil && cmd.Process != nil {
-			cmd.Process.Kill()
+		if shell {
+			fmt.Fprint(stdin, "exit\n")
+			stdin.Close()
+			allDone(ppid) //force
 		}
+		log.Println(args, "done")
 	}()
+
+	// go bufCopy(stdin, s)
+	// go bufCopy(s, stdout)
+
+	go io.Copy(stdin, s)
+	io.Copy(s, stdout)
 	err = cmd.Wait()
 	if err != nil {
 		log.Println(args[0], err)
 	}
 }
 
-func cmdArgs(commands []string) (args []string) {
-	const SH = "cmd.exe"
-	path := ""
-	var err error
-	for _, shell := range []string{os.Getenv("ComSpec"), SH} {
-		if path, err = exec.LookPath(shell); err == nil {
-			break
-		}
-	}
-	if path == "" {
-		path = SH
-	}
-	args = []string{path}
-	if len(commands) > 0 {
-		args = append(args, "/c")
-		args = append(args, commands...)
-	}
-	return
-}
-
-func shArgs(commands []string) (args []string) {
-	const SH = "/bin/sh"
-	path := ""
-	var err error
-	for _, shell := range []string{"/bin/bash", "/usr/local/bin/bash", "/bin/sh", "bash", "sh"} {
-		if path, err = exec.LookPath(shell); err == nil {
-			break
-		}
-	}
-	if path == "" {
-		path = SH
-	}
-
-	args = []string{path}
-	if len(commands) > 0 {
-		args = append(args, "-c")
-		args = append(args, commands...)
-	}
-	return
-}
-
 // for shell and exec
-func cmdPTY(s ssh.Session) {
+func shellOrExec(s ssh.Session) {
+	shell := len(s.Command()) == 0
 	RemoteAddr := s.RemoteAddr()
 	defer func() {
 		log.Println(RemoteAddr, "done")
@@ -352,59 +299,58 @@ func cmdPTY(s ssh.Session) {
 
 	ptyReq, winCh, isPty := s.Pty()
 	if !isPty {
-		powerShell(s)
-	} else {
-		// for kitty_portable a@:2222
-		f, err := console.New(ptyReq.Window.Width, ptyReq.Window.Width)
+		// for `kitty_portable a@:2222 -t` or `klink a@:2222 -t` or `klink a@:2222 commands`
+		noPTY(s)
+		return
+	}
+	// for `kitty_portable a@:2222` or `klink a@:2222 -T` or `klink a@:2222 -T commands`
+	stdin, err := console.New(ptyReq.Window.Width, ptyReq.Window.Width)
+	if err != nil {
+		fmt.Fprint(s, "unable to create console", err)
+		noPTY(s)
+		return
+	}
+	args := shArgs(s.Command())
 
-		if err != nil {
-			fmt.Fprint(s, "unable to create console", err)
-			return
+	defer func() {
+		log.Println(args, "done")
+		if stdin != nil {
+			stdin.Close()
 		}
-		args := []string{}
-		if runtime.GOOS == "windows" {
-			args = cmdArgs(s.Command())
-			// f.SetENV([]string{"TERM=dumb", "NO_COLOR=yes"})
-		} else {
-			args = shArgs(s.Command())
-			f.SetENV([]string{"TERM=" + ptyReq.Term})
-		}
+	}()
 
-		defer func() {
-			log.Println(args, "done")
-			if f != nil {
-				f.Close()
-			}
-		}()
+	stdin.SetENV([]string{"TERM=" + ptyReq.Term})
+	err = stdin.Start(args)
+	if err != nil {
+		fmt.Fprint(s, "unable to start", args, err)
+		noPTY(s)
+		return
+	}
+	log.Println(args)
 
-		err = f.Start(args)
-		if err != nil {
-			fmt.Fprint(s, "unable to start", args, err)
-			return
-		}
-		log.Println(args)
-
-		done := s.Context().Done()
-		go func() {
-			for {
-				select {
-				case <-done:
-					f.Close()
-					return
-				case win := <-winCh:
-					f.SetSize(win.Width, win.Height)
+	done := s.Context().Done()
+	go func() {
+		for {
+			select {
+			case <-done:
+				if shell {
+					fmt.Fprint(stdin, "exit\n")
+					stdin.Close()
+				}
+				return
+			case win := <-winCh:
+				log.Println("PTY SetSize", win)
+				if err := stdin.SetSize(win.Width, win.Height); err != nil {
+					log.Println(err)
 				}
 			}
-		}()
-
-		go func() {
-			io.Copy(f, s) // stdin
-		}()
-		io.Copy(s, f) // stdout
-
-		if _, err := f.Wait(); err != nil {
-			log.Println(args[0], err)
 		}
+	}()
+
+	go io.Copy(stdin, s)
+	io.Copy(s, stdin)
+	if _, err := stdin.Wait(); err != nil {
+		log.Println(args[0], err)
 	}
 }
 
@@ -443,4 +389,15 @@ func keyToAllowed(key ssh.PublicKey) {
 	b := gossh.MarshalAuthorizedKey(key)
 	log.Println("keyToAllowed", string(b))
 	bytesToAllowed(b)
+}
+
+func pDone(ppid int) (err error) {
+	Process, err := os.FindProcess(ppid)
+	if err == nil {
+		err = Process.Kill()
+		if err == nil {
+			log.Println("ppid", ppid, "done")
+		}
+	}
+	return
 }

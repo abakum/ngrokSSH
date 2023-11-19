@@ -6,6 +6,7 @@ require (
 	github.com/abakum/go-console v0.0.0-20231116091236-378db095501c
 	github.com/gliderlabs/ssh v0.3.5
 	github.com/pkg/sftp v1.13.6
+	github.com/xlab/closer v1.1.0
 	golang.org/x/crypto v0.14.0
 )
 
