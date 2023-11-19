@@ -213,7 +213,7 @@ func generateSigner(pri, pub string) (ssh.Signer, error) {
 	return gossh.NewSignerFromKey(key)
 }
 
-// for not PTY as `klink a@:2222 -T` or `klink a@:2222 commands`
+// for not PTY as `klink a@:2222 -T` or `klink a@:2222 commands` or `kitty_portable a@:2222 -T`
 func noPTY(s ssh.Session) {
 	shell := len(s.Command()) == 0
 	args := shellArgs(shArgs(s.Command()))
@@ -280,15 +280,14 @@ func shellOrExec(s ssh.Session) {
 
 	ptyReq, winCh, isPty := s.Pty()
 	if !isPty {
-		// for `kitty_portable a@:2222 -t` or `klink a@:2222 -t` or `klink a@:2222 commands`
 		noPTY(s)
 		return
 	}
-	// for `kitty_portable a@:2222` or `klink a@:2222 -T` or `klink a@:2222 -T commands`
+	// for `kitty_portable a@:2222` or `klink a@:2222` or `klink a@:2222 -t commands`
 	stdin, err := console.New(ptyReq.Window.Width, ptyReq.Window.Width)
 	if err != nil {
 		fmt.Fprint(s, "unable to create console", err)
-		noPTY(s)
+		noPTY(s) // fallback
 		return
 	}
 	args := shArgs(s.Command())
@@ -304,7 +303,7 @@ func shellOrExec(s ssh.Session) {
 	err = stdin.Start(args)
 	if err != nil {
 		fmt.Fprint(s, "unable to start", args, err)
-		noPTY(s)
+		noPTY(s) // fallback
 		return
 	}
 	log.Println(args)
@@ -331,7 +330,7 @@ func shellOrExec(s ssh.Session) {
 	go io.Copy(stdin, s)
 	io.Copy(s, stdin)
 	if _, err := stdin.Wait(); err != nil {
-		log.Println(args[0], err)
+		log.Println(args, err)
 	}
 }
 
@@ -372,6 +371,7 @@ func keyToAllowed(key ssh.PublicKey) {
 	bytesToAllowed(b)
 }
 
+// parent done
 func pDone(ppid int) (err error) {
 	Process, err := os.FindProcess(ppid)
 	if err == nil {
