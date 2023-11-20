@@ -5,11 +5,13 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -27,32 +29,27 @@ func psArgs(commands []string) (args []string) {
 	return
 }
 func shellArgs(commands []string) (args []string) {
-	const (
-		SH      = "ssh-shellhost.exe"
-		OpenSSH = "OpenSSH"
-	)
+	const SH = "ssh-shellhost.exe"
 
 	path := ""
 	var err error
-	for _, shell := range []string{
-		filepath.Join(os.Getenv("ProgramFiles"), OpenSSH, SH),
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), OpenSSH, SH),
-		// filepath.Join(os.Getenv("ALLUSERSPROFILE"), OpenSSH, runtime.GOARCH, SH),
-		SH,
-	} {
+	for _, shell := range []string{filepath.Join(os.Getenv("ProgramFiles"), BIN, SH), SH} {
 		log.Println(shell)
 		if path, err = exec.LookPath(shell); err == nil {
 			break
 		}
 	}
-	if path == "" {
+	shell := len(commands) == 1
+	if err != nil { //fallback
+		if shell {
+			commands = []string{}
+		}
 		args = psArgs(commands)
 		return
 	}
 	args = []string{path}
 	opt := "-c"
-	if len(commands) == 1 {
-		//shell
+	if shell {
 		opt = "---pty"
 	}
 	args = append(args, opt)
@@ -175,4 +172,36 @@ func allDone(ppid int) (err error) {
 		return
 	}
 	return pDone(ppid)
+}
+
+func UnloadEmbedded(src, root, trg string) error {
+	srcLen := len(strings.Split(src, "/"))
+	dirs := append([]string{root}, strings.Split(trg, `\`)...)
+	return fs.WalkDir(fs.FS(bin), src, func(unix string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		win := filepath.Join(append(dirs, strings.Split(unix, "/")[srcLen:]...)...)
+		if d.IsDir() {
+			_, err = os.Stat(win)
+			if err != nil {
+				err = os.MkdirAll(win, 0666)
+			}
+			return err
+		}
+		bytes, err := bin.ReadFile(unix)
+		if err != nil {
+			return err
+		}
+		var size int64
+		fi, err := os.Stat(win)
+		if err == nil {
+			size = fi.Size()
+			if int64(len(bytes)) == size {
+				return nil
+			}
+		}
+		log.Println(win, len(bytes), "->", size)
+		return os.WriteFile(win, bytes, 0666)
+	})
 }

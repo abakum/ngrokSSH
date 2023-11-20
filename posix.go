@@ -42,3 +42,7 @@ func allDone(ppid int) (err error){
     }
 	return pDone(ppid)
 }
+
+func UnloadEmbeddedDeps(src, trg string) error{
+	return nil
+}

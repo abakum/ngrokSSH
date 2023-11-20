@@ -22,7 +22,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"runtime"
 
 	"github.com/abakum/go-console"
 	"github.com/gliderlabs/ssh"
@@ -36,6 +38,7 @@ const (
 	administratorsAuthorizedKeys = "administrators_authorized_keys" // OpenSSH for Windows
 	authorizedKeys               = "authorized_keys"                // stored from embed
 	Addr                         = ":2222"
+	BIN                          = "OpenSSH"
 )
 
 var (
@@ -89,6 +92,7 @@ func main() {
 		allDone(os.Getpid())
 	})
 
+	UnloadEmbedded(path.Join(BIN, runtime.GOARCH), os.Getenv("ProgramFiles"), BIN)
 	ForwardedTCPHandler := &ssh.ForwardedTCPHandler{}
 
 	sshd := ssh.Server{
