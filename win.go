@@ -16,6 +16,34 @@ import (
 	"unsafe"
 )
 
+func aKeys() []string {
+	return []string{
+		filepath.Join(os.Getenv("ALLUSERSPROFILE"), administratorsAuthorizedKeys),
+		filepath.Join(os.Getenv("USERPROFILE"), ".ssh", authorizedKeys),
+		filepath.Join(cwd, authorizedKeys),
+	}
+}
+
+func hKey(cwd, sshHostKey string) (pri string) {
+	for _, dir := range []string{
+		os.Getenv("ALLUSERSPROFILE"),
+		cwd,
+	} {
+		for _, key := range []string{
+			"ssh_host_ecdsa_key",
+			"ssh_host_ed25519_key",
+			sshHostKey,
+		} {
+			pri = filepath.Join(dir, key)
+			_, err := os.Stat(pri)
+			if err == nil {
+				break
+			}
+		}
+	}
+	return
+}
+
 func psArgs(commands []string) (args []string) {
 	args = []string{"powershell.exe", "-NoProfile", "-NoLogo"}
 	if len(commands) > 0 {
@@ -61,7 +89,10 @@ func shArgs(commands []string) (args []string) {
 	const SH = "cmd.exe"
 	path := ""
 	var err error
-	for _, shell := range []string{os.Getenv("ComSpec"), SH} {
+	for _, shell := range []string{
+		os.Getenv("ComSpec"),
+		SH,
+	} {
 		if path, err = exec.LookPath(shell); err == nil {
 			break
 		}

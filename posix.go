@@ -5,6 +5,30 @@ package main
 
 import "os/exec"
 
+func aKeys() []string {
+	return []string{
+		path.Join(cwd, authorizedKeys),
+		path.Join(os.Getenv("HOME"), ".ssh", authorizedKeys),
+		path.Join("/etc/dropbear", authorizedKeys),
+	}
+}
+
+func hKey(_, sshHostKey string) (pri string) {
+	for _, key := range []string{
+		"ssh_host_ecdsa_key",
+		"ssh_host_ed25519_key",
+		sshHostKey,
+	} {
+		pri = path.Join("/etc/ssh", key)
+		_, err := os.Stat(pri)
+		if err == nil {
+			break
+		}
+	}
+	return
+}
+
+
 proc shellArgs(commands []string) []string{
  return commands[:]
 }
@@ -13,7 +37,14 @@ func shArgs(commands []string) (args []string) {
 	const SH = "/bin/sh"
 	path := ""
 	var err error
-	for _, shell := range []string{"/bin/bash", "/usr/local/bin/bash", "/bin/sh", "bash", "sh"} {
+	for _, shell := range []string{
+		os.Getenv("SHELL"),
+		"/bin/bash",
+		"/usr/local/bin/bash",
+		"/bin/sh",
+		"bash",
+		"sh",
+	} {
 		if path, err = exec.LookPath(shell); err == nil {
 			break
 		}
@@ -43,6 +74,6 @@ func allDone(ppid int) (err error){
 	return pDone(ppid)
 }
 
-func UnloadEmbeddedDeps(src, trg string) error{
+func UnloadEmbedded(_, _ string) error{
 	return nil
 }

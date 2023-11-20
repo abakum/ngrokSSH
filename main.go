@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -36,7 +37,7 @@ import (
 const (
 	sshHostKey                   = "ssh_host_rsa_key"               // OpenSSH for Windows
 	administratorsAuthorizedKeys = "administrators_authorized_keys" // OpenSSH for Windows
-	authorizedKeys               = "authorized_keys"                // stored from embed
+	authorizedKeys               = "authorized_keys"                // write from embed or from first client
 	Addr                         = ":2222"
 	BIN                          = "OpenSSH"
 )
@@ -132,11 +133,10 @@ func main() {
 	}
 
 	// next for server key
-	pri := filepath.Join(cwd, sshHostKey)
-	pub := filepath.Join(cwd, sshHostKey+".pub")
+	pri := hKey(cwd, sshHostKey)
 	pemBytes, err := os.ReadFile(pri)
 	if err != nil {
-		key, err = generateSigner(pri, pub)
+		key, err = generateSigner(pri)
 	} else {
 		key, err = gossh.ParsePrivateKey(pemBytes)
 	}
@@ -153,11 +153,7 @@ func main() {
 	// before for server key
 
 	// next for client keys
-	for _, akf := range []string{
-		filepath.Join(os.Getenv("ALLUSERSPROFILE"), administratorsAuthorizedKeys),
-		filepath.Join(os.Getenv("USERPROFILE"), ".ssh", authorizedKeys),
-		filepath.Join(cwd, authorizedKeys),
-	} {
+	for _, akf := range aKeys() {
 		kk := fileToAllowed(os.ReadFile(akf))
 		allowed = append(allowed, kk...)
 	}
@@ -192,7 +188,7 @@ func main() {
 }
 
 // like ssh.generateSigner plus write key to files
-func generateSigner(pri, pub string) (ssh.Signer, error) {
+func generateSigner(pri string) (ssh.Signer, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
@@ -211,7 +207,7 @@ func generateSigner(pri, pub string) (ssh.Signer, error) {
 			Bytes: Bytes,
 		})
 
-		os.WriteFile(pub, data, 0644)
+		os.WriteFile(pri+".pub", data, 0644)
 	}
 
 	return gossh.NewSignerFromKey(key)
@@ -224,11 +220,7 @@ func noPTY(s ssh.Session) {
 
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = cwd
-	cmd.Env = os.Environ()
-	ptyReq, _, _ := s.Pty()
-	if ptyReq.Term != "" {
-		cmd.Env = append(cmd.Env, "TERM="+ptyReq.Term)
-	}
+	cmd.Env = append(os.Environ(), env(s)...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -271,6 +263,26 @@ func noPTY(s ssh.Session) {
 	}
 }
 
+func env(s ssh.Session) (e []string) {
+	ra, ok := s.RemoteAddr().(*net.TCPAddr)
+	if ok {
+		la, ok := s.LocalAddr().(*net.TCPAddr)
+		if ok {
+			e = append(e,
+				"SSH_CLIENT="+fmt.Sprintf("%s %d %d", ra.IP, ra.Port, la.Port),
+				"SSH_CONNECTION="+fmt.Sprintf("%s %d %s %d", ra.IP, ra.Port, la.IP, la.Port),
+			)
+		}
+	}
+	ptyReq, _, _ := s.Pty()
+	if ptyReq.Term != "" {
+		e = append(e,
+			"TERM="+ptyReq.Term,
+		)
+	}
+	return
+}
+
 // for shell and exec
 func shellOrExec(s ssh.Session) {
 	shell := len(s.Command()) == 0
@@ -303,7 +315,7 @@ func shellOrExec(s ssh.Session) {
 		}
 	}()
 
-	stdin.SetENV([]string{"TERM=" + ptyReq.Term})
+	stdin.SetENV(env(s))
 	err = stdin.Start(args)
 	if err != nil {
 		fmt.Fprint(s, "unable to start", args, err)
