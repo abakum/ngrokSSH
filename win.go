@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"github.com/gliderlabs/ssh"
 )
 
 func aKeys() []string {
@@ -41,6 +43,26 @@ func hKey(cwd, sshHostKey string) (pri string) {
 			}
 		}
 	}
+	return
+}
+
+func osEnv(s ssh.Session, shell string) (e []string) {
+	ptyReq, _, isPty := s.Pty()
+	if isPty {
+		if ptyReq.Term != "" {
+			e = append(e,
+				"TERM="+ptyReq.Term,
+			)
+		}
+		e = append(e,
+			"SSH_TTY=windows-pty",
+		)
+	}
+	e = append(e,
+		fmt.Sprintf(`HOME=%s%s\%s`, os.Getenv("HOMEDRIVE"), os.Getenv("HOMEPATH"), s.User()),
+		fmt.Sprintf("PROMPT=%s@%s$S$P$G", s.User(), os.Getenv("COMPUTERNAME")),
+		fmt.Sprintf("SHELL=%s", shell),
+	)
 	return
 }
 

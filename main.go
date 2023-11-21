@@ -216,11 +216,13 @@ func generateSigner(pri string) (ssh.Signer, error) {
 // for not PTY as `klink a@:2222 -T` or `klink a@:2222 commands` or `kitty_portable a@:2222 -T`
 func noPTY(s ssh.Session) {
 	shell := len(s.Command()) == 0
-	args := shellArgs(shArgs(s.Command()))
+	args := shArgs(s.Command())
+	e := env(s, args[0])
+	args = shellArgs(args)
 
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = cwd
-	cmd.Env = append(os.Environ(), env(s)...)
+	cmd.Env = append(os.Environ(), e...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -263,7 +265,7 @@ func noPTY(s ssh.Session) {
 	}
 }
 
-func env(s ssh.Session) (e []string) {
+func env(s ssh.Session, shell string) (e []string) {
 	ra, ok := s.RemoteAddr().(*net.TCPAddr)
 	if ok {
 		la, ok := s.LocalAddr().(*net.TCPAddr)
@@ -274,12 +276,12 @@ func env(s ssh.Session) (e []string) {
 			)
 		}
 	}
-	ptyReq, _, _ := s.Pty()
-	if ptyReq.Term != "" {
-		e = append(e,
-			"TERM="+ptyReq.Term,
-		)
-	}
+	e = append(e,
+		"LOGNAME="+s.User(),
+	)
+	e = append(e,
+		osEnv(s, shell)...,
+	)
 	return
 }
 
@@ -307,6 +309,7 @@ func shellOrExec(s ssh.Session) {
 		return
 	}
 	args := shArgs(s.Command())
+	stdin.SetENV(env(s, args[0]))
 
 	defer func() {
 		log.Println(args, "done")
@@ -315,7 +318,6 @@ func shellOrExec(s ssh.Session) {
 		}
 	}()
 
-	stdin.SetENV(env(s))
 	err = stdin.Start(args)
 	if err != nil {
 		fmt.Fprint(s, "unable to start", args, err)

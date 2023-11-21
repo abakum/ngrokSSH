@@ -28,6 +28,9 @@ func hKey(_, sshHostKey string) (pri string) {
 	return
 }
 
+func osEnv(_ ssh.Session, _ string) (e []string) {
+	return
+}
 
 proc shellArgs(commands []string) []string{
  return commands[:]
