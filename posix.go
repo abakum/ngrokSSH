@@ -4,6 +4,7 @@
 package main
 
 import "os/exec"
+gossh "golang.org/x/crypto/ssh"
 
 func aKeys() []string {
 	return []string{
@@ -25,10 +26,6 @@ func hKey(_, sshHostKey string) (pri string) {
 			break
 		}
 	}
-	return
-}
-
-func osEnv(_ ssh.Session, _ string) (e []string) {
 	return
 }
 
@@ -79,4 +76,34 @@ func allDone(ppid int) (err error){
 
 func UnloadEmbedded(_, _ string) error{
 	return nil
+}
+
+func env(s ssh.Session, shell string) (e []string) {
+	ra, ok := s.RemoteAddr().(*net.TCPAddr)
+	if ok {
+		la, ok := s.LocalAddr().(*net.TCPAddr)
+		if ok {
+			e = append(e,
+				fmt.Sprintf("%s=%s %d %d", "SSH_CLIENT", ra.IP, ra.Port, la.Port),
+				fmt.Sprintf("%s=%s %d %s %d", "SSH_CONNECTION", ra.IP, ra.Port, la.IP, la.Port),
+			)
+		}
+	}
+	e = append(e,
+		"LOGNAME="+s.User(),
+	)
+	if ssh.AgentRequested(s) {
+		l, err := ssh.NewAgentListener()
+		log.Println("AgentRequested", err)
+		if err == nil {
+			go func() {
+				defer l.Close()
+				ssh.ForwardAgentConnections(l, s)
+			}()
+			SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
+			log.Println(SSH_AUTH_SOCK)
+			e = append(e, SSH_AUTH_SOCK)
+		}
+	}
+	return
 }

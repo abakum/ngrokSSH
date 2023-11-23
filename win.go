@@ -5,17 +5,28 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
+	"github.com/Microsoft/go-winio"
 	"github.com/gliderlabs/ssh"
+	gossh "golang.org/x/crypto/ssh"
+)
+
+const (
+	openSshAgentPipe = `\\.\pipe\openssh-ssh-agent`
+	PIPE             = `\\.\pipe\`
 )
 
 func aKeys() []string {
@@ -43,26 +54,6 @@ func hKey(cwd, sshHostKey string) (pri string) {
 			}
 		}
 	}
-	return
-}
-
-func osEnv(s ssh.Session, shell string) (e []string) {
-	ptyReq, _, isPty := s.Pty()
-	if isPty {
-		if ptyReq.Term != "" {
-			e = append(e,
-				"TERM="+ptyReq.Term,
-			)
-		}
-		e = append(e,
-			"SSH_TTY=windows-pty",
-		)
-	}
-	e = append(e,
-		fmt.Sprintf(`HOME=%s%s\%s`, os.Getenv("HOMEDRIVE"), os.Getenv("HOMEPATH"), s.User()),
-		fmt.Sprintf("PROMPT=%s@%s$S$P$G", s.User(), os.Getenv("COMPUTERNAME")),
-		fmt.Sprintf("SHELL=%s", shell),
-	)
 	return
 }
 
@@ -257,4 +248,97 @@ func UnloadEmbedded(src, root, trg string) error {
 		log.Println(win, len(bytes), "->", size)
 		return os.WriteFile(win, bytes, 0666)
 	})
+}
+
+func NewAgentListener() (net.Listener, error) {
+	l, err := winio.ListenPipe(fmt.Sprintf("%s%s", PIPE, time.Now().Format(time.RFC3339Nano)), nil)
+	// l, err := winio.ListenPipe(PIPE+"1", nil)
+	if err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+
+func env(s ssh.Session, shell string) (e []string, l net.Listener) {
+	ra, ok := s.RemoteAddr().(*net.TCPAddr)
+	if ok {
+		la, ok := s.LocalAddr().(*net.TCPAddr)
+		if ok {
+			e = append(e,
+				fmt.Sprintf("%s=%s %d %d", "SSH_CLIENT", ra.IP, ra.Port, la.Port),
+				fmt.Sprintf("%s=%s %d %s %d", "SSH_CONNECTION", ra.IP, ra.Port, la.IP, la.Port),
+			)
+		}
+	}
+	e = append(e,
+		"LOGNAME="+s.User(),
+	)
+	var err error
+	if ssh.AgentRequested(s) {
+		l, err = NewAgentListener()
+		log.Println("AgentRequested", err)
+		if err == nil {
+			go func() {
+				defer l.Close()
+				ForwardAgentConnections(l, s)
+			}()
+			SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
+			log.Println(SSH_AUTH_SOCK)
+			e = append(e, SSH_AUTH_SOCK)
+		}
+	}
+	ptyReq, _, isPty := s.Pty()
+	if isPty {
+		if ptyReq.Term != "" {
+			e = append(e,
+				// "TERM="+ptyReq.Term,
+				"TERM=xterm-256color",
+				// "TERM=xterm-mono",
+				// "TERM=vt220",
+				// "TERM=vt100",
+			)
+		}
+		e = append(e,
+			"SSH_TTY=windows-pty",
+		)
+	}
+	e = append(e,
+		fmt.Sprintf(`HOME=%s%s\%s`, os.Getenv("HOMEDRIVE"), os.Getenv("HOMEPATH"), s.User()),
+		fmt.Sprintf("PROMPT=%s@%s$S$P$G", s.User(), os.Getenv("COMPUTERNAME")),
+		fmt.Sprintf("SHELL=%s", shell),
+	)
+	return
+}
+
+func ForwardAgentConnections(l net.Listener, s ssh.Session) {
+	const agentChannelType = "auth-agent@openssh.com"
+	sshConn := s.Context().Value(ssh.ContextKeyConn).(gossh.Conn)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		go func(conn net.Conn) {
+			channel, reqs, err := sshConn.OpenChannel(agentChannelType, nil)
+			if err != nil {
+				defer conn.Close()
+				return
+			}
+			defer channel.Close()
+			go gossh.DiscardRequests(reqs)
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				io.Copy(conn, channel)
+				conn.Close()
+				wg.Done()
+			}()
+			go func() {
+				io.Copy(channel, conn)
+				channel.CloseWrite()
+				wg.Done()
+			}()
+			wg.Wait()
+		}(conn)
+	}
 }

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -38,8 +37,9 @@ const (
 	sshHostKey                   = "ssh_host_rsa_key"               // OpenSSH for Windows
 	administratorsAuthorizedKeys = "administrators_authorized_keys" // OpenSSH for Windows
 	authorizedKeys               = "authorized_keys"                // write from embed or from first client
-	Addr                         = ":2222"
-	BIN                          = "OpenSSH"
+	// Addr                         = "127.0.0.1:22"
+	Addr = ":2222"
+	BIN  = "OpenSSH"
 )
 
 var (
@@ -217,7 +217,10 @@ func generateSigner(pri string) (ssh.Signer, error) {
 func noPTY(s ssh.Session) {
 	shell := len(s.Command()) == 0
 	args := shArgs(s.Command())
-	e := env(s, args[0])
+	e, l := env(s, args[0])
+	if l != nil {
+		defer l.Close()
+	}
 	args = shellArgs(args)
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -265,26 +268,6 @@ func noPTY(s ssh.Session) {
 	}
 }
 
-func env(s ssh.Session, shell string) (e []string) {
-	ra, ok := s.RemoteAddr().(*net.TCPAddr)
-	if ok {
-		la, ok := s.LocalAddr().(*net.TCPAddr)
-		if ok {
-			e = append(e,
-				"SSH_CLIENT="+fmt.Sprintf("%s %d %d", ra.IP, ra.Port, la.Port),
-				"SSH_CONNECTION="+fmt.Sprintf("%s %d %s %d", ra.IP, ra.Port, la.IP, la.Port),
-			)
-		}
-	}
-	e = append(e,
-		"LOGNAME="+s.User(),
-	)
-	e = append(e,
-		osEnv(s, shell)...,
-	)
-	return
-}
-
 // for shell and exec
 func shellOrExec(s ssh.Session) {
 	shell := len(s.Command()) == 0
@@ -309,7 +292,12 @@ func shellOrExec(s ssh.Session) {
 		return
 	}
 	args := shArgs(s.Command())
-	stdin.SetENV(env(s, args[0]))
+	e, l := env(s, args[0])
+	if l != nil {
+		defer l.Close()
+	}
+
+	stdin.SetENV(e)
 
 	defer func() {
 		log.Println(args, "done")
