@@ -273,20 +273,6 @@ func env(s ssh.Session, shell string) (e []string, l net.Listener) {
 	e = append(e,
 		"LOGNAME="+s.User(),
 	)
-	var err error
-	if ssh.AgentRequested(s) {
-		l, err = NewAgentListener()
-		log.Println("AgentRequested", err)
-		if err == nil {
-			go func() {
-				defer l.Close()
-				ForwardAgentConnections(l, s)
-			}()
-			SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
-			log.Println(SSH_AUTH_SOCK)
-			e = append(e, SSH_AUTH_SOCK)
-		}
-	}
 	ptyReq, _, isPty := s.Pty()
 	if isPty {
 		if ptyReq.Term != "" {
@@ -307,6 +293,21 @@ func env(s ssh.Session, shell string) (e []string, l net.Listener) {
 		fmt.Sprintf("PROMPT=%s@%s$S$P$G", s.User(), os.Getenv("COMPUTERNAME")),
 		fmt.Sprintf("SHELL=%s", shell),
 	)
+	if !ssh.AgentRequested(s) {
+		return
+	}
+	l, err := NewAgentListener()
+	log.Println("AgentRequested", err)
+	if err != nil {
+		return
+	}
+	go func() {
+		defer l.Close()
+		ForwardAgentConnections(l, s)
+	}()
+	SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
+	log.Println(SSH_AUTH_SOCK)
+	e = append(e, SSH_AUTH_SOCK)
 	return
 }
 

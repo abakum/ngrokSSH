@@ -92,18 +92,20 @@ func env(s ssh.Session, shell string) (e []string) {
 	e = append(e,
 		"LOGNAME="+s.User(),
 	)
-	if ssh.AgentRequested(s) {
-		l, err := ssh.NewAgentListener()
-		log.Println("AgentRequested", err)
-		if err == nil {
-			go func() {
-				defer l.Close()
-				ssh.ForwardAgentConnections(l, s)
-			}()
-			SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
-			log.Println(SSH_AUTH_SOCK)
-			e = append(e, SSH_AUTH_SOCK)
-		}
+	if !ssh.AgentRequested(s) {
+		return
 	}
+	l, err := ssh.NewAgentListener()
+	log.Println("AgentRequested", err)
+	if err != nil {
+		return
+	}
+	go func() {
+		defer l.Close()
+		ssh.ForwardAgentConnections(l, s)
+	}()
+	SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
+	log.Println(SSH_AUTH_SOCK)
+	e = append(e, SSH_AUTH_SOCK)
 	return
 }
