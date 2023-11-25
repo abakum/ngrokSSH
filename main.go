@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -38,8 +39,9 @@ const (
 	administratorsAuthorizedKeys = "administrators_authorized_keys" // OpenSSH for Windows
 	authorizedKeys               = "authorized_keys"                // write from embed or from first client
 	// Addr                         = "127.0.0.1:22"
-	Addr = ":2222"
-	BIN  = "OpenSSH"
+	Addr          = ":2222"
+	BIN           = "OpenSSH"
+	SSH_AUTH_SOCK = "SSH_AUTH_SOCK="
 )
 
 var (
@@ -65,8 +67,8 @@ func SessionRequestCallback(s ssh.Session, requestType string) bool {
 	return true
 }
 
-// SubsystemHandlers for sftp
-func SubsystemHandlers(s ssh.Session) {
+// SubsystemHandlerSftp for sftp
+func SubsystemHandlerSftp(s ssh.Session) {
 	debugStream := io.Discard
 	serverOptions := []sftp.ServerOption{
 		sftp.WithDebug(debugStream),
@@ -115,13 +117,14 @@ func main() {
 			return true
 		}),
 		ChannelHandlers: map[string]ssh.ChannelHandler{
-			"session":      ssh.DefaultSessionHandler,
+			"session":      SessionHandler,
 			"direct-tcpip": ssh.DirectTCPIPHandler,
 		},
 		// before for ssh -L x:dhost:dport
 
 		SubsystemHandlers: map[string]ssh.SubsystemHandler{
-			"sftp": SubsystemHandlers,
+			"sftp":           SubsystemHandlerSftp,
+			agentRequestType: SubsystemHandlerAgent, //fake Subsystem
 		},
 		SessionRequestCallback: SessionRequestCallback,
 	}
@@ -217,10 +220,7 @@ func generateSigner(pri string) (ssh.Signer, error) {
 func noPTY(s ssh.Session) {
 	shell := len(s.Command()) == 0
 	args := shArgs(s.Command())
-	e, l := env(s, args[0])
-	if l != nil {
-		defer l.Close()
-	}
+	e := env(s, args[0])
 	args = shellArgs(args)
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -292,13 +292,7 @@ func shellOrExec(s ssh.Session) {
 		return
 	}
 	args := shArgs(s.Command())
-	e, l := env(s, args[0])
-	if l != nil {
-		defer l.Close()
-	}
-
-	stdin.SetENV(e)
-
+	stdin.SetENV(env(s, args[0]))
 	defer func() {
 		log.Println(args, "done")
 		if stdin != nil {
@@ -326,6 +320,13 @@ func shellOrExec(s ssh.Session) {
 				return
 			case win := <-winCh:
 				log.Println("PTY SetSize", win)
+				if stdin == nil {
+					return
+				}
+				if win.Height == 0 && win.Width == 0 {
+					stdin.Close()
+					return
+				}
 				if err := stdin.SetSize(win.Width, win.Height); err != nil {
 					log.Println(err)
 				}
@@ -387,4 +388,194 @@ func pDone(ppid int) (err error) {
 		}
 	}
 	return
+}
+
+// named pipe for Windows or unix sock
+func pipe(sess *session) {
+	s := ""
+	if runtime.GOOS == "windows" {
+		s = fmt.Sprintf(`%s%s\%s`, PIPE, sess.LocalAddr(), sess.RemoteAddr())
+	} else {
+		dir, err := os.MkdirTemp("", agentTempDir)
+		if err != nil {
+			dir = os.TempDir()
+		}
+		s = path.Join(dir, agentListenFile)
+	}
+	e := append(sess.env, SSH_AUTH_SOCK+s)
+	sess.env = e
+}
+
+// callback for agentRequest
+func (sess *session) handleRequests(reqs <-chan *gossh.Request) {
+	for req := range reqs {
+		switch req.Type {
+		case "shell", "exec":
+			if sess.handled {
+				req.Reply(false, nil)
+				continue
+			}
+
+			var payload = struct{ Value string }{}
+			gossh.Unmarshal(req.Payload, &payload)
+			sess.rawCmd = payload.Value
+
+			// If there's a session policy callback, we need to confirm before
+			// accepting the session.
+			if sess.sessReqCb != nil && !sess.sessReqCb(sess, req.Type) {
+				sess.rawCmd = ""
+				req.Reply(false, nil)
+				continue
+			}
+
+			sess.handled = true
+			req.Reply(true, nil)
+
+			go func() {
+				sess.handler(sess)
+				sess.Exit(0)
+			}()
+		case "subsystem":
+			if sess.handled {
+				req.Reply(false, nil)
+				continue
+			}
+
+			var payload = struct{ Value string }{}
+			gossh.Unmarshal(req.Payload, &payload)
+
+			sess.subsystem = payload.Value
+
+			// If there's a session policy callback, we need to confirm before
+			// accepting the session.
+			if sess.sessReqCb != nil && !sess.sessReqCb(sess, req.Type) {
+				sess.rawCmd = ""
+				req.Reply(false, nil)
+				continue
+			}
+
+			handler := sess.subsystemHandlers[payload.Value]
+			if handler == nil {
+				handler = sess.subsystemHandlers["default"]
+			}
+			if handler == nil {
+				req.Reply(false, nil)
+				continue
+			}
+
+			sess.handled = true
+			req.Reply(true, nil)
+
+			go func() {
+				handler(sess)
+				sess.Exit(0)
+			}()
+		case "env":
+			if sess.handled {
+				req.Reply(false, nil)
+				continue
+			}
+			var kv struct{ Key, Value string }
+			gossh.Unmarshal(req.Payload, &kv)
+			sess.env = append(sess.env, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
+			req.Reply(true, nil)
+		case "signal":
+			var payload struct{ Signal string }
+			gossh.Unmarshal(req.Payload, &payload)
+			sess.Lock()
+			if sess.sigCh != nil {
+				sess.sigCh <- ssh.Signal(payload.Signal)
+			} else {
+				if len(sess.sigBuf) < maxSigBufSize {
+					sess.sigBuf = append(sess.sigBuf, ssh.Signal(payload.Signal))
+				}
+			}
+			sess.Unlock()
+		case "pty-req":
+			if sess.handled || sess.pty != nil {
+				req.Reply(false, nil)
+				continue
+			}
+			ptyReq, ok := parsePtyRequest(req.Payload)
+			if !ok {
+				req.Reply(false, nil)
+				continue
+			}
+			if sess.ptyCb != nil {
+				ok := sess.ptyCb(sess.ctx, ptyReq)
+				if !ok {
+					req.Reply(false, nil)
+					continue
+				}
+			}
+			sess.pty = &ptyReq
+			sess.winch = make(chan ssh.Window, 1)
+			sess.winch <- ptyReq.Window
+			defer func() {
+				// when reqs is closed
+				close(sess.winch)
+			}()
+			req.Reply(ok, nil)
+		case "window-change":
+			if sess.pty == nil {
+				req.Reply(false, nil)
+				continue
+			}
+			win, ok := parseWinchRequest(req.Payload)
+			if ok {
+				sess.pty.Window = win
+				sess.winch <- win
+			}
+			req.Reply(ok, nil)
+		case agentRequestType:
+			// TODO: option/callback to allow agent forwarding
+			if sess.agent {
+				req.Reply(false, nil)
+				continue
+			}
+
+			// If there's a session policy callback, we need to confirm before
+			// accepting the session.
+			if sess.sessReqCb != nil && !sess.sessReqCb(sess, req.Type) {
+				req.Reply(false, nil)
+				continue
+			}
+
+			handler := sess.subsystemHandlers[agentRequestType]
+			if handler == nil {
+				req.Reply(false, nil)
+				continue
+			}
+
+			pipe(sess)
+
+			sess.agent = true
+			req.Reply(true, nil)
+
+			go func() {
+				handler(sess)
+				sess.agent = false
+			}()
+			// ssh.SetAgentRequested(sess.ctx)
+			// req.Reply(true, nil)
+		case "break":
+			ok := false
+			sess.Lock()
+			if sess.breakCh != nil {
+				sess.breakCh <- true
+				ok = true
+			}
+			req.Reply(ok, nil)
+			sess.Unlock()
+		default:
+			// TODO: debug log
+			req.Reply(false, nil)
+		}
+	}
+}
+
+func doner(l net.Listener, s ssh.Session) {
+	<-s.Context().Done()
+	log.Println(l.Addr().String(), "done")
+	l.Close()
 }

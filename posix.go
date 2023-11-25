@@ -6,6 +6,32 @@ package main
 import "os/exec"
 gossh "golang.org/x/crypto/ssh"
 
+func SubsystemHandlerAgent(s ssh.Session) {
+	l, err := NewAgentListener(s)
+	if err != nil {
+		return
+	}
+	defer l.Close()
+	go doner(l, s)
+	ssh.ForwardAgentConnections(l, s)
+}
+
+// NewAgentListener sets up a temporary Unix socket that can be communicated
+// to the session environment and used for forwarding connections.
+func NewAgentListener(s ssh.Session) (net.Listener, error) {
+	for _, e := range s.Environ() {
+		if strings.HasPrefix(e, SSH_AUTH_SOCK) {
+			l, err := net.Listen("unix",strings.TrimPrefix(e, SSH_AUTH_SOCK))
+			if err != nil {
+				return nil, err
+			}
+			return l, nil
+		}
+	}
+	return nil, fmt.Errorf("not found %s", SSH_AUTH_SOCK)
+}
+
+
 func aKeys() []string {
 	return []string{
 		path.Join(cwd, authorizedKeys),
@@ -79,6 +105,7 @@ func UnloadEmbedded(_, _ string) error{
 }
 
 func env(s ssh.Session, shell string) (e []string) {
+	e=s.Environ
 	ra, ok := s.RemoteAddr().(*net.TCPAddr)
 	if ok {
 		la, ok := s.LocalAddr().(*net.TCPAddr)
@@ -92,20 +119,5 @@ func env(s ssh.Session, shell string) (e []string) {
 	e = append(e,
 		"LOGNAME="+s.User(),
 	)
-	if !ssh.AgentRequested(s) {
-		return
-	}
-	l, err := ssh.NewAgentListener()
-	log.Println("AgentRequested", err)
-	if err != nil {
-		return
-	}
-	go func() {
-		defer l.Close()
-		ssh.ForwardAgentConnections(l, s)
-	}()
-	SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
-	log.Println(SSH_AUTH_SOCK)
-	e = append(e, SSH_AUTH_SOCK)
 	return
 }

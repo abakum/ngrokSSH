@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/Microsoft/go-winio"
@@ -26,7 +25,7 @@ import (
 
 const (
 	openSshAgentPipe = `\\.\pipe\openssh-ssh-agent`
-	PIPE             = `\\.\pipe\`
+	PIPE             = `\\.\pipe\auth-agent\`
 )
 
 func aKeys() []string {
@@ -250,16 +249,33 @@ func UnloadEmbedded(src, root, trg string) error {
 	})
 }
 
-func NewAgentListener() (net.Listener, error) {
-	l, err := winio.ListenPipe(fmt.Sprintf("%s%s", PIPE, time.Now().Format(time.RFC3339Nano)), nil)
-	// l, err := winio.ListenPipe(PIPE+"1", nil)
+// fake SubsystemHandlers for agent
+func SubsystemHandlerAgent(s ssh.Session) {
+	l, err := NewAgentListener(s)
 	if err != nil {
-		return nil, err
+		return
 	}
-	return l, nil
+	defer l.Close()
+	go doner(l, s)
+	ForwardAgentConnections(l, s)
 }
 
-func env(s ssh.Session, shell string) (e []string, l net.Listener) {
+func NewAgentListener(s ssh.Session) (net.Listener, error) {
+	for _, e := range s.Environ() {
+		if strings.HasPrefix(e, SSH_AUTH_SOCK) {
+			l, err := winio.ListenPipe(strings.TrimPrefix(e, SSH_AUTH_SOCK), nil)
+			if err != nil {
+				return nil, err
+			}
+			return l, nil
+		}
+	}
+	return nil, fmt.Errorf("not found %s", SSH_AUTH_SOCK)
+}
+
+func env(s ssh.Session, shell string) (e []string) {
+	e = s.Environ()
+	log.Println(e)
 	ra, ok := s.RemoteAddr().(*net.TCPAddr)
 	if ok {
 		la, ok := s.LocalAddr().(*net.TCPAddr)
@@ -293,26 +309,10 @@ func env(s ssh.Session, shell string) (e []string, l net.Listener) {
 		fmt.Sprintf("PROMPT=%s@%s$S$P$G", s.User(), os.Getenv("COMPUTERNAME")),
 		fmt.Sprintf("SHELL=%s", shell),
 	)
-	if !ssh.AgentRequested(s) {
-		return
-	}
-	l, err := NewAgentListener()
-	log.Println("AgentRequested", err)
-	if err != nil {
-		return
-	}
-	go func() {
-		defer l.Close()
-		ForwardAgentConnections(l, s)
-	}()
-	SSH_AUTH_SOCK := fmt.Sprintf("%s=%s", "SSH_AUTH_SOCK", l.Addr().String())
-	log.Println(SSH_AUTH_SOCK)
-	e = append(e, SSH_AUTH_SOCK)
 	return
 }
 
 func ForwardAgentConnections(l net.Listener, s ssh.Session) {
-	const agentChannelType = "auth-agent@openssh.com"
 	sshConn := s.Context().Value(ssh.ContextKeyConn).(gossh.Conn)
 	for {
 		conn, err := l.Accept()
