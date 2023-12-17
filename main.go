@@ -10,6 +10,8 @@ go get golang.ngrok.com/ngrok
 go get github.com/ngrok/ngrok-api-go/v5
 go get github.com/abakum/go-netstat
 go get github.com/mitchellh/go-ps
+go get github.com/blacknon/go-sshlib
+go get github.com/abakum/bnssh
 
 go mod tidy
 */
@@ -32,11 +34,16 @@ import (
 )
 
 const (
-	PORT = "22"
-	ALL  = "0.0.0.0"
-	LH   = "127.0.0.1"
-	TOS  = time.Second * 7
-	TOM  = time.Millisecond * 7
+	PORT    = "22"
+	ALL     = "0.0.0.0"
+	LH      = "127.0.0.1"
+	TOS     = time.Second * 7
+	TOM     = time.Millisecond * 7
+	RFC2217 = 2217
+	RFB     = 5900
+	RRFB    = "5500"
+	SOCKS5  = "1080"
+	SSHD    = "2022"
 )
 
 var (
@@ -52,58 +59,76 @@ var (
 	//go:embed VERSION
 	VERSION string
 
-	sshPort,
+	sp,
 	hp,
 	cwd,
 	exe,
-	imagename,
-	ifs,
+	image,
 	publicURL,
-	metadata string
+	metadata,
+	ln string
+
 	err   error
 	ips   []string
 	count int
+
 	sshd,
 	ngrokOnline,
-	ngrokSSHD bool
-	sshdExe = "sshd.exe"
+	ngrokSSHD,
+	A bool
+
+	sshdExe    = "sshd.exe"
+	hub4comExe = "hub4com.exe"
+	vncExes    = []string{"winvnc.exe", "tvnserver.exe", "winvnc4.exe", "vncserver.exe", "repeater.exe"}
+	vncExe     = ""
+	L, R       arrayFlags
 )
 
 func main() {
+
 	defer closer.Close()
 	closer.Bind(cleanup)
 
-	// if the ngorok tunnel has already been created or not acces to api.ngrok.com, but a local sshd is needed, then use `ngrokSSH -d`
+	cwd, err = os.Getwd()
+	if err != nil {
+		err = srcError(err)
+		return
+	}
+	exe, err = os.Executable()
+	if err != nil {
+		err = srcError(err)
+		return
+	}
+	image = filepath.Base(exe)
+
+	flag.BoolVar(&A, "A", false, fmt.Sprintf("authentication `agent` forwarding as `ssh -A`\nuse `%s -A`", image))
+
+	flag.Var(&L, "L", fmt.Sprintf("`local` port forwarding as `ssh -L [bh:]bp:dh:dp` or local socks5 proxy as `ssh -D [bh:]bp`\nuse `%s -L [bindHost:]bindPort[:dialHost:dialPort]` (default \"%s\")", image, SOCKS5))
+	flag.Var(&R, "R", fmt.Sprintf("`remote` port forwarding as `ssh -R [dh:]dp:bh:bp` or remote socks5 proxy  as `ssh -R [bh:]bp`\nuse `%s -R [dialHost:]dialPort[:bindHost:bindPort]` (default \"%s\")", image, SOCKS5))
+
+	flag.StringVar(&ln, "l", "", fmt.Sprintf("`login` name as `ssh -l ln` \nuse `%s -l ln host:port` or `%s ln@host:port`", image, image))
+	flag.StringVar(&sp, "p", "", fmt.Sprintf("ssh `port` as `ssh -p port ln@host` or `sshd -p port` \nuse `%s -p port` or `%s -p port lh@host` (default \"%s\")", image, image, PORT))
+	// if the ngorok tunnel has already been created or not access to api.ngrok.com, but a local sshd is needed, then use `ngrokSSH -d`
 	// если туннель ngorok уже был создан или нет доступа к api.ngrok.com, но нужен локальный sshd, тогда используйте `ngrokSSH -d`
-	flag.BoolVar(&sshd, "d", false, "ssh `daemon` mode - режим сервера ssh\nuse `"+imagename+" -d host:port` as `sshd -o listenaddress=host:port`")
-
-	flag.StringVar(&sshPort, "p", "", fmt.Sprintf("ssh `port`\nuse `"+imagename+" -p port` as `ssh -p port` or `sshd -p port` (default \"%s\")", PORT))
-
+	// flag.BoolVar(&sshd, "d", false, fmt.Sprintf("ssh `daemon` mode - режим сервера ssh as `sshd -o listenaddress=host:port` if -d is omited then as `ssh host:port`\nuse `%s [-d] host:port` ", image))
 	flag.Parse()
 	hp = flag.Arg(0)
-	h, p, e := net.SplitHostPort(hp)
-	if e != nil {
-		h = hp
+	if strings.Contains(hp, "@") {
+		uhp := strings.Split(hp, "@")
+		ln = uhp[0]
+		hp = uhp[1]
 	}
+	h, p := SplitHostPort(hp, "", PORT) //lh->lh:22 22->:22
 	h = strings.TrimPrefix(h, ALL)
 
-	if sshPort != "" {
-		p = sshPort
-	}
-	if p == "" {
-		p = PORT
+	if sp != "" {
+		p = sp
 	}
 
-	if h == "" && hp != "" {
+	if h == "" && hp != "" && ln == "" {
 		sshd = true
 	}
 	hp = net.JoinHostPort(h, p)
-	ltf.Println(hp, sshd)
-
-	cwd, err = os.Getwd()
-	if err != nil {
-		return
-	}
 
 	NGROK_AUTHTOKEN = Getenv("NGROK_AUTHTOKEN", NGROK_AUTHTOKEN) //create ngrok
 	// NGROK_AUTHTOKEN += "-"                                       // emulate bad token or no internet
@@ -111,14 +136,8 @@ func main() {
 	NGROK_API_KEY = Getenv("NGROK_API_KEY", NGROK_API_KEY) //use ngrok
 	// NGROK_API_KEY += "-"                                   // emulate LAN mode
 
-	exe, err = os.Executable()
-	if err != nil {
-		err = srcError(err)
-		return
-	}
-	imagename = filepath.Base(exe)
-	go established(imagename)
-	count = psCount(imagename, "")
+	go established(image)
+	count = psCount(image, "")
 
 	ips = interfaces()
 	if len(ips) == 0 {
@@ -129,12 +148,12 @@ func main() {
 
 	publicURL, metadata, err = ngrokAPI(NGROK_API_KEY)
 	PrintOk(publicURL+" "+metadata, err)
-
 	ngrokSSHD = err == nil
 	ngrokOnline = ngrokSSHD
 	if !ngrokSSHD {
 		ngrokOnline = strings.HasSuffix(err.Error(), "not found online client")
 	}
+
 	if sshd {
 		server()
 		return
@@ -143,7 +162,7 @@ func main() {
 		u := os.Getenv("USERNAME")
 		err = sshTry(u, h, p)
 		if err == nil {
-			client(u, h, p)
+			client(u, h, p, p)
 			return
 		}
 	}
@@ -204,4 +223,15 @@ func cleanup() {
 		defer os.Exit(1)
 	}
 	winssh.AllDone(os.Getpid())
+}
+
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return fmt.Sprintf("%v", *i)
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, strings.TrimSpace(value))
+	return nil
 }

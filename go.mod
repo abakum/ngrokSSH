@@ -2,9 +2,14 @@ module github.com/abakum/ngrokSSH
 
 go 1.21.3
 
+replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 v1.2.6
+
 require (
+	github.com/Microsoft/go-winio v0.6.1
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
+	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
 	github.com/abakum/winssh v0.0.0-20231209221217-1d04134cc13d
+	github.com/blacknon/go-sshlib v0.1.10
 	github.com/gliderlabs/ssh v0.3.5
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/ngrok/ngrok-api-go/v5 v5.1.0
@@ -15,15 +20,11 @@ require (
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
-	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/ScaleFT/sshkeys v0.0.0-20200327173127-6142f742bca5 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
-	github.com/abakum/bnssh v0.0.0-20231127140618-118cb7b778f7 // indirect
 	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
-	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
-	github.com/blacknon/go-sshlib v0.1.10 // indirect
 	github.com/creack/pty v1.1.21 // indirect
 	github.com/dchest/bcrypt_pbkdf v0.0.0-20150205184540-83f37f9c154a // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
