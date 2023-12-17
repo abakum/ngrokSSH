@@ -169,11 +169,11 @@ func use(hp string) (s string) {
 		p = ""
 	}
 	if h != "" {
-		return fmt.Sprintf("`%s`", strings.Trim(image+" "+net.JoinHostPort(h, p), " :"))
+		return fmt.Sprintf("`%s`", strings.Trim(image+" "+userName+"@"+net.JoinHostPort(h, p), " :"))
 	}
 	s = ""
 	for _, h := range ips {
-		s += fmt.Sprintf("\n\t`%s`", strings.Trim(image+" "+net.JoinHostPort(h, p), " :"))
+		s += fmt.Sprintf("\n\t`%s`", strings.Trim(image+" "+userName+"@"+net.JoinHostPort(h, p), " :"))
 	}
 	return
 }
@@ -184,7 +184,7 @@ func withMetadata(lPort string) (meta string) {
 	if h == ALL || h == "" {
 		h = strings.Join(ips, ",")
 	}
-	return fmt.Sprintf("%s@%s:%s", os.Getenv("USERNAME"), h, p)
+	return fmt.Sprintf("%s@%s:%s", userName, h, p)
 }
 
 func run(ctx context.Context, dest string, http bool) error {

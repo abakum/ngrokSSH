@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Microsoft/go-winio"
 	"github.com/abakum/pageant"
@@ -28,9 +29,9 @@ func client(user, host, port, listenAddress string) {
 
 	var b bytes.Buffer
 	con := &sshlib.Connect{
-		// ForwardAgent: true,
-		Agent:  agent.NewClient(rw),
-		Stdout: &b,
+		ForwardAgent: A,
+		Agent:        agent.NewClient(rw),
+		Stdout:       &b,
 	}
 
 	signers, err := sshlib.CreateSignerAgent(con.Agent)
@@ -81,17 +82,19 @@ func client(user, host, port, listenAddress string) {
 	if len(L) == 0 {
 		L = append(L, SOCKS5)
 		con.Command("hub4com!")
-		ltf.Println(b.String())
+		time.Sleep(time.Second)
 		h, p, e := net.SplitHostPort(b.String())
 		if e == nil {
-			L = append(L, fmt.Sprintf("%d:%s:%s", RFC2217, h, p))
+			// L = append(L, fmt.Sprintf("%d:%s:%s", RFC2217, h, p))
+			tryBind(RFC2217, h, p, con)
 		}
 		b.Reset()
 		con.Command("vnc!")
-		ltf.Println(b.String())
+		time.Sleep(time.Second)
 		h, p, e = net.SplitHostPort(b.String())
 		if e == nil {
-			L = append(L, fmt.Sprintf("%d:%s:%s", RFB, h, p))
+			// L = append(L, fmt.Sprintf("%d:%s:%s", RFB, h, p))
+			tryBind(RFB, h, p, con)
 		}
 	}
 	for _, v := range L {
@@ -124,6 +127,9 @@ func client(user, host, port, listenAddress string) {
 func fromNgrok(publicURL, meta string) (u, h, p, listenAddress string) {
 	unp := strings.Split(meta, "@")
 	u = unp[0]
+	if ln != "" {
+		u = ln
+	}
 
 	np := net.JoinHostPort(ALL, PORT)
 	if len(unp) > 1 {
@@ -221,4 +227,13 @@ func SplitHostPort(hp, host, port string) (h, p string) {
 		return host, hp
 	}
 	return hp, port
+}
+
+func tryBind(bind int, h, p string, con *sshlib.Connect) {
+	for i := 0; i < 3; i++ {
+		if e := con.TCPLocalForward(net.JoinHostPort(LH, strconv.Itoa(bind+i)), net.JoinHostPort(h, p)); e == nil {
+			ltf.Printf("%s -L %d:%s:%s", image, bind+i, h, p)
+			return
+		}
+	}
 }

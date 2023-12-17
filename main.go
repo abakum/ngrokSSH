@@ -41,7 +41,6 @@ const (
 	TOM     = time.Millisecond * 7
 	RFC2217 = 2217
 	RFB     = 5900
-	RRFB    = "5500"
 	SOCKS5  = "1080"
 	SSHD    = "2022"
 )
@@ -67,6 +66,7 @@ var (
 	publicURL,
 	metadata,
 	ln string
+	userName = os.Getenv("USERNAME")
 
 	err   error
 	ips   []string
@@ -128,6 +128,9 @@ func main() {
 	if h == "" && hp != "" && ln == "" {
 		sshd = true
 	}
+	if ln != "" {
+		userName = ln
+	}
 	hp = net.JoinHostPort(h, p)
 
 	NGROK_AUTHTOKEN = Getenv("NGROK_AUTHTOKEN", NGROK_AUTHTOKEN) //create ngrok
@@ -159,10 +162,9 @@ func main() {
 		return
 	}
 	if h != "" {
-		u := os.Getenv("USERNAME")
-		err = sshTry(u, h, p)
+		err = sshTry(userName, h, p)
 		if err == nil {
-			client(u, h, p, p)
+			client(userName, h, p, p)
 			return
 		}
 	}
