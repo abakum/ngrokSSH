@@ -10,12 +10,16 @@ require (
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
 	github.com/abakum/winssh v0.0.0-20231209221217-1d04134cc13d
 	github.com/blacknon/go-sshlib v0.1.10
+	github.com/dixonwille/wmenu/v5 v5.1.0
+	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
 	github.com/gliderlabs/ssh v0.3.5
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/ngrok/ngrok-api-go/v5 v5.1.0
 	github.com/xlab/closer v1.1.0
+	go.bug.st/serial v1.6.1
 	golang.ngrok.com/ngrok v1.7.0
 	golang.org/x/crypto v0.16.0
+	gopkg.in/ini.v1 v1.67.0
 )
 
 require (
@@ -25,12 +29,16 @@ require (
 	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
+	github.com/creack/goselect v0.1.2 // indirect
 	github.com/creack/pty v1.1.21 // indirect
+	github.com/daviddengcn/go-colortext v0.0.0-20180409174941-186a3d44e920 // indirect
 	github.com/dchest/bcrypt_pbkdf v0.0.0-20150205184540-83f37f9c154a // indirect
+	github.com/dixonwille/wlog/v3 v3.0.1 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/iamacarpet/go-winpty v1.0.4 // indirect
 	github.com/inconshreveable/log15 v3.0.0-testing.5+incompatible // indirect
 	github.com/inconshreveable/log15/v3 v3.0.0-testing.5 // indirect
+	github.com/jezek/xgb v1.1.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect

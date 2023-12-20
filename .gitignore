@@ -25,3 +25,4 @@ ssh_host_rsa_key
 go.sum
 *.txt
 *.exe
+bin/PUTTY.RND

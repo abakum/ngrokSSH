@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -18,23 +20,34 @@ import (
 )
 
 func client(user, host, port, listenAddress string) {
-	ltf.Printf("%s %s@%s:%s\n", image, user, host, port)
+	var (
+		sock    net.Conn
+		signers []ssh.Signer
+		session *ssh.Session
+	)
+	if so == "" {
+		so = sep //auto
+	} else {
+		sep = so //manual
+	}
 
-	rw, err := NewConn()
+	VisitAll(fmt.Sprintf("%s@%s:%s", user, host, port))
+
+	sock, err = NewConn()
 	if err != nil {
 		err = srcError(err)
 		return
 	}
-	defer rw.Close()
+	defer sock.Close()
 
 	var b bytes.Buffer
 	con := &sshlib.Connect{
 		ForwardAgent: A,
-		Agent:        agent.NewClient(rw),
+		Agent:        agent.NewClient(sock),
 		Stdout:       &b,
 	}
 
-	signers, err := sshlib.CreateSignerAgent(con.Agent)
+	signers, err = sshlib.CreateSignerAgent(con.Agent)
 	if err != nil || len(signers) == 0 {
 		err = srcError(err)
 		return
@@ -46,34 +59,8 @@ func client(user, host, port, listenAddress string) {
 		return
 	}
 
-	if len(R) == 0 {
-		R = append(R, SOCKS5)
-	}
-	for _, v := range R {
-		hphp := strings.Split(v, ":")
-		switch {
-		case len(hphp) > 3:
-			if hphp[0] == "" {
-				hphp[0] = LH
-			}
-			PrintOk(fmt.Sprintf("%s -R %s:%s:%s:%s", image, hphp[0], hphp[1], hphp[2], hphp[3]), con.TCPRemoteForward(net.JoinHostPort(hphp[0], hphp[1]), net.JoinHostPort(hphp[2], hphp[3])))
-		case len(hphp) > 2:
-			PrintOk(fmt.Sprintf("%s -R %s:%s:%s:%s", image, LH, hphp[0], hphp[1], hphp[2]), con.TCPRemoteForward(net.JoinHostPort(LH, hphp[0]), net.JoinHostPort(hphp[1], hphp[2])))
-		case len(hphp) > 1:
-			ltf.Printf(fmt.Sprintf("%s -R %s:%s\n", image, hphp[0], hphp[1]))
-			go func() {
-				con.TCPReverseDynamicForward(hphp[0], hphp[1])
-			}()
-		default:
-			ltf.Printf(fmt.Sprintf("%s -R %s:%s\n", image, LH, hphp[0]))
-			go func() {
-				con.TCPReverseDynamicForward(LH, hphp[0])
-			}()
-		}
-	}
-
 	// Create Session
-	session, err := con.CreateSession()
+	session, err = con.CreateSession()
 	if err != nil {
 		err = srcError(err)
 		return
@@ -81,73 +68,73 @@ func client(user, host, port, listenAddress string) {
 
 	if len(L) == 0 {
 		L = append(L, SOCKS5)
-		con.Command("hub4com!")
-		time.Sleep(time.Second)
-		h, p, e := net.SplitHostPort(b.String())
-		if e == nil {
-			// L = append(L, fmt.Sprintf("%d:%s:%s", RFC2217, h, p))
-			tryBind(RFC2217, h, p, con)
-		}
-		b.Reset()
-		con.Command("vnc!")
-		time.Sleep(time.Second)
-		h, p, e = net.SplitHostPort(b.String())
-		if e == nil {
-			// L = append(L, fmt.Sprintf("%d:%s:%s", RFB, h, p))
-			tryBind(RFB, h, p, con)
-		}
 	}
-	for _, v := range L {
-		hphp := strings.Split(v, ":")
-		switch {
-		case len(hphp) > 3:
-			if hphp[0] == "" {
-				hphp[0] = LH
-			}
-			PrintOk(fmt.Sprintf("%s -L %s:%s:%s:%s", image, hphp[0], hphp[1], hphp[2], hphp[3]), con.TCPLocalForward(net.JoinHostPort(hphp[0], hphp[1]), net.JoinHostPort(hphp[2], hphp[3])))
-		case len(hphp) > 2:
-			PrintOk(fmt.Sprintf("%s -L %s:%s:%s:%s", image, LH, hphp[0], hphp[1], hphp[2]), con.TCPLocalForward(net.JoinHostPort(LH, hphp[0]), net.JoinHostPort(hphp[1], hphp[2])))
-		case len(hphp) > 1:
-			ltf.Printf(fmt.Sprintf("%s -D %s:%s\n", image, hphp[0], hphp[1]))
-			go func() {
-				con.TCPDynamicForward(hphp[0], hphp[1])
-			}()
-		default:
-			ltf.Printf(fmt.Sprintf("%s -D %s:%s\n", image, LH, hphp[0]))
-			go func() {
-				con.TCPDynamicForward(LH, hphp[0])
-			}()
-		}
+	cgi(con, "vnc!", vnc, RFB, &b)
+	for _, o := range L {
+		tryBindL(con, parseHPHP(o, USER)...)
 	}
+
+	for _, o := range R {
+		tryBindR(con, parseHPHP(o, USER)...)
+	}
+
 	con.SendKeepAliveInterval = 100
 	con.SendKeepAliveMax = 3
-	con.SendKeepAlive(session)
+
+	if so == "" {
+		letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
+	}
+
+	po, er := cgi(con, "hub4com!", rfc2217, RFC2217, &b)
+	if er != nil || so == "" || rfc2217 == "" {
+		go established(image)
+		go con.SendKeepAlive(session)
+		title := fmt.Sprintf("%s@%s:%s", user, host, port)
+		opts := []string{
+			title,
+			"-title",
+			title,
+			"-hostkey",
+			hostkey,
+		}
+		if A {
+			opts = append(opts, "-A")
+		}
+		ki := exec.Command(kitty, opts...)
+
+		li.Println(cmd("Run", ki))
+		err = srcError(ki.Run())
+		PrintOk(cmd("Close", ki), err)
+	} else {
+		go con.SendKeepAlive(session)
+		hphp := parseHPHP(rfc2217, RFC2217)
+		hphp[1] = strconv.Itoa(po)
+		tty(strings.Join(hphp, ":"))
+	}
 }
 
 func fromNgrok(publicURL, meta string) (u, h, p, listenAddress string) {
 	unp := strings.Split(meta, "@")
-	u = unp[0]
-	if ln != "" {
-		u = ln
-	}
-
-	np := net.JoinHostPort(ALL, PORT)
-	if len(unp) > 1 {
-		np = unp[1]
-	}
-	netsPort := strings.Split(np, ":")
-	p = PORT
-	if len(netsPort) > 1 {
-		p = netsPort[1]
-	}
-	nets := strings.Split(netsPort[0], ",")
-	for _, ip := range nets {
-		if listenAddress == "" {
-			listenAddress = net.JoinHostPort(ip, p)
+	u = un(unp[0])
+	if !N {
+		np := net.JoinHostPort(ALL, PORT)
+		if len(unp) > 1 {
+			np = unp[1]
 		}
-		if sshTry(u, ip, p) == nil {
-			h = ip
-			return
+		netsPort := strings.Split(np, ":")
+		p = PORT
+		if len(netsPort) > 1 {
+			p = netsPort[1]
+		}
+		nets := strings.Split(netsPort[0], ",")
+		for _, ip := range nets {
+			if listenAddress == "" {
+				listenAddress = net.JoinHostPort(ip, p)
+			}
+			if sshTry(u, ip, p) == nil {
+				h = ip
+				return
+			}
 		}
 	}
 	tcp, err := url.Parse(publicURL)
@@ -229,11 +216,122 @@ func SplitHostPort(hp, host, port string) (h, p string) {
 	return hp, port
 }
 
-func tryBind(bind int, h, p string, con *sshlib.Connect) {
-	for i := 0; i < 3; i++ {
-		if e := con.TCPLocalForward(net.JoinHostPort(LH, strconv.Itoa(bind+i)), net.JoinHostPort(h, p)); e == nil {
-			ltf.Printf("%s -L %d:%s:%s", image, bind+i, h, p)
-			return
-		}
+func tryBindL(con *sshlib.Connect, hphp ...string) (p int, err error) {
+	if len(hphp) < 2 {
+		hphp = []string{LH, strconv.Itoa(USER)}
 	}
+	p, er := strconv.Atoi(hphp[1])
+	if er != nil {
+		p = USER
+	}
+	if len(hphp) > 2 {
+		for i := 0; i < 3; i++ {
+			err = con.TCPLocalForward(net.JoinHostPort(hphp[0], strconv.Itoa(p)), net.JoinHostPort(hphp[2], hphp[3]))
+			if err == nil {
+				ltf.Printf("%s -L %s:%d:%s:%s", image, hphp[0], p, hphp[2], hphp[3])
+				return
+			}
+			p++
+		}
+		return
+	}
+	go func() {
+		ltf.Printf("%s -D %s:%s", image, hphp[0], hphp[1])
+		err = con.TCPDynamicForward(hphp[0], hphp[1])
+		PrintOk("TCPDynamicForward", err)
+	}()
+	return
+}
+
+func tryBindR(con *sshlib.Connect, hphp ...string) (p int, err error) {
+	if len(hphp) < 2 {
+		hphp = []string{LH, strconv.Itoa(USER)}
+	}
+	p, er := strconv.Atoi(hphp[1])
+	if er != nil {
+		p = USER
+	}
+	if len(hphp) > 2 {
+		for i := 0; i < 3; i++ {
+			err = con.TCPRemoteForward(net.JoinHostPort(hphp[0], strconv.Itoa(p)), net.JoinHostPort(hphp[2], hphp[3]))
+			if err == nil {
+				ltf.Printf("%s -R %s:%d:%s:%s", image, hphp[0], p, hphp[2], hphp[3])
+				return
+			}
+			p++
+		}
+		return
+	}
+	go func() {
+		ltf.Printf("%s -R %s:%s", image, hphp[0], hphp[1])
+		err = con.TCPReverseDynamicForward(hphp[0], hphp[1])
+		PrintOk("TCPDynamicForward", err)
+	}()
+	return
+}
+
+func cgi(con *sshlib.Connect, cc, opt string, port int, b *bytes.Buffer) (po int, err error) {
+	if opt == "" {
+		return
+	}
+	hphp := parseHPHP(opt, port)
+	if len(hphp) > 2 {
+		// L = append(L, strings.Join(hphp, ":"))
+		return tryBindL(con, hphp...)
+	}
+	con.Command(cc)
+	time.Sleep(time.Second)
+	h, p, e := net.SplitHostPort(b.String())
+	b.Reset()
+	if e != nil {
+		return 0, err
+	}
+	// L = append(L, strings.Join(append(hphp, h, p), ":"))
+	return tryBindL(con, append(hphp, h, p)...)
+}
+
+func parseHPHP(opt string, port int) (res []string) {
+	if opt == "" {
+		return
+	}
+	bp := strconv.Itoa(port)
+	hphp := strings.Split(opt, ":")
+	// h:p:h:p :p:h:p p:h:p p h
+	if len(hphp) > 0 && hphp[0] == "" { // :
+		hphp[0] = LH
+	}
+	if len(hphp) > 1 && hphp[1] == "" { // :
+		hphp[1] = bp
+	}
+
+	_, er := strconv.Atoi(hphp[0])
+	if er == nil { // p...
+		hphp = append([]string{LH}, hphp...)
+	} // h:p:h:p :p:h:p h:p h
+	switch {
+	case len(hphp) > 3: // h:p:h:p
+		if hphp[2] == "" { // ::
+			hphp[2] = LH
+		}
+		if hphp[3] == "" { // :::
+			hphp[3] = bp
+		}
+		return hphp[:4]
+	case len(hphp) > 2: // h:p:h
+		return append(hphp, bp)
+	case len(hphp) > 1: // h:p
+		return hphp
+	default: // h
+		return append(hphp, bp)
+	}
+}
+
+func VisitAll(uhp string) {
+	o := ""
+	flag.VisitAll(func(f *flag.Flag) {
+		if f.Name != "l" {
+			o += fmt.Sprintf("-%s=%s ", f.Name, f.Value)
+		}
+	})
+	ltf.Printf("%s %s%s \n", image, o, uhp)
 }

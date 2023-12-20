@@ -22,10 +22,15 @@ import (
 )
 
 func server() {
-	ltf.Println(image, hp)
-	if count != 1 {
-		li.Println("another one has been launched - запущен ещё один", image)
+	if so == "" {
+		so = ser //auto
+	} else {
+		ser = so //manual
 	}
+	VisitAll(fmt.Sprintf("%s@%s", un(""), hp))
+	com()
+
+	go established(image)
 
 	// if sshd of OpenSSH use listenaddress==hp then use it else start nfrokSSH daemon
 	// если sshd от OpenSSH использует listenaddress==hp то он будет использоваться в противном случае запустится сервер nfrokSSH
@@ -128,12 +133,12 @@ func server() {
 			res := ""
 			switch s.Command()[0] {
 			case "hub4com!":
-				res, _ = la(hub4comExe, RFC2217)
+				res, hub4comExe = la(hub4comExe, RFC2217)
 				fmt.Fprint(s, res)
 				return
 			case "vnc!":
 				for _, exe := range vncExes {
-					res, vncExe = la(exe, RFB)
+					res, _ = la(exe, RFB)
 					if res != "" {
 						fmt.Fprint(s, res)
 						return
@@ -163,17 +168,28 @@ func server() {
 	PrintOk("ListenAndServe", server.ListenAndServe())
 }
 
+func un(ru string) (u string) {
+	u = ln
+	if u == "" {
+		u = ru
+	}
+	if u == "" {
+		u = os.Getenv("USERNAME")
+	}
+	return
+}
+
 func use(hp string) (s string) {
 	h, p, _ := net.SplitHostPort(hp)
 	if p == PORT {
 		p = ""
 	}
 	if h != "" {
-		return fmt.Sprintf("`%s`", strings.Trim(image+" "+userName+"@"+net.JoinHostPort(h, p), " :"))
+		return fmt.Sprintf("`%s`", strings.Trim(image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))
 	}
 	s = ""
 	for _, h := range ips {
-		s += fmt.Sprintf("\n\t`%s`", strings.Trim(image+" "+userName+"@"+net.JoinHostPort(h, p), " :"))
+		s += fmt.Sprintf("\n\t`%s`", strings.Trim(image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))
 	}
 	return
 }
@@ -184,7 +200,7 @@ func withMetadata(lPort string) (meta string) {
 	if h == ALL || h == "" {
 		h = strings.Join(ips, ",")
 	}
-	return fmt.Sprintf("%s@%s:%s", userName, h, p)
+	return fmt.Sprintf("%s@%s:%s", un(""), h, p)
 }
 
 func run(ctx context.Context, dest string, http bool) error {
