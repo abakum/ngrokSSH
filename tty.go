@@ -11,21 +11,27 @@ import (
 
 	"github.com/dixonwille/wmenu/v5"
 	"github.com/f1bonacc1/glippy"
-	"github.com/xlab/closer"
 	"gopkg.in/ini.v1"
+)
+
+const (
+	KITTYINI = "kitty.ini"
 )
 
 var (
 	commandDelay = DELAY
 	ok           bool
+	opts         []string
 )
 
-func tty(rfc2217 string) {
-	hphp := parseHPHP(rfc2217, RFC2217)
-	CNCB = `\\.\` + CNCB
-	li.Println("COM"+so, "com0com", CNCB)
+// start hub4com then show menu for baud and delay
+func tty(hphp ...string) {
+	if So == "" {
+		return
+	}
+	li.Println("COM"+So, "com0com", Cncb)
 
-	opts = append(opts,
+	opts := []string{"--baud=75",
 		"--create-filter=escparse,com,parse",
 		"--create-filter=pinmap,com,pinmap:--rts=cts --dtr=dsr",
 		"--create-filter=linectl,com,lc:--br=local --lc=local",
@@ -34,11 +40,11 @@ func tty(rfc2217 string) {
 		"--create-filter=telnet,tcp,telnet:--comport=client",
 		"--create-filter=pinmap,tcp,pinmap:--rts=cts --dtr=dsr --break=break",
 		"--create-filter=linectl,tcp,lc:--br=remote --lc=remote",
-	)
-	if crypt != "" {
-		opts = append(opts, crypt)
 	}
-	hub = exec.Command(hub4com, append(opts,
+	if Crypt != "" {
+		opts = append(opts, Crypt)
+	}
+	Hub = exec.Command(Fns[HUB4COM], append(opts,
 		"--add-filters=1:tcp",
 
 		// "--use-driver=serial",
@@ -47,28 +53,26 @@ func tty(rfc2217 string) {
 		"--ox="+XO,
 		"--ix="+XO,
 		"--write-limit="+LIMIT,
-		CNCB,
+		Cncb,
 
 		"--use-driver=tcp",
 		net.JoinHostPort(hphp[0], hphp[1]),
 	)...)
 
 	var bBuffer bytes.Buffer
-	hub.Stdout = &bBuffer
-	hub.Stderr = &bBuffer
-	go func() {
-		li.Println(cmd("Run", hub))
-		err = srcError(hub.Run())
-		PrintOk(cmd("Close", hub), err)
-		if err != nil {
-			closer.Close()
-		}
-	}()
+	Hub.Stdout = &bBuffer
+	Hub.Stderr = &bBuffer
+	PrintOk(cmd("Start", Hub), Hub.Start())
+	// go func() {
+	// 	li.Println(cmd("Run", Hub))
+	// 	PrintOk(cmd("Close", Hub), Hub.Run())
+	// }()
+	defer kill()
 	for i := 0; i < 24; i++ {
 		s, er := bBuffer.ReadString('\n')
 		if er == nil {
 			if strings.Contains(s, "ERROR") {
-				err = Errorf(s)
+				Err = Errorf(s)
 				return
 			}
 			fmt.Print(s)
@@ -80,23 +84,23 @@ func tty(rfc2217 string) {
 	}
 	// fmt.Print(bBuffer.String())
 	bBuffer.WriteTo(os.Stdout)
-	hub.Stdout = os.Stdout
-	hub.Stderr = os.Stderr
+	Hub.Stdout = os.Stdout
+	Hub.Stderr = os.Stderr
 
 	for {
-		if baud != "" {
+		if Baud != "" {
 			opts = []string{
 				"-sercfg",
-				baud,
+				Baud,
 				"-serial",
-				"COM" + sep,
+				"COM" + So,
 			}
 			PrintOk("cmdFromClipBoard", command())
-			ki := exec.Command(kitty, opts...)
+			ki := exec.Command(Fns[KITTY], opts...)
 
 			li.Println(cmd("Run", ki))
-			err = srcError(ki.Run())
-			PrintOk(cmd("Close", ki), err)
+			Err = srcError(ki.Run())
+			PrintOk(cmd("Close", ki), Err)
 		}
 		menu := wmenu.NewMenu("Choose baud and seconds delay for Ctrl-F2 or commands from clipboard case delay>" + DELAY +
 			"\nВыбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера обмена если задержка>" + DELAY)
@@ -105,35 +109,42 @@ func tty(rfc2217 string) {
 				if strings.HasPrefix(o.Text, "0") {
 					commandDelay = o.Text
 				} else {
-					baud = o.Text
+					Baud = o.Text
 				}
 			}
-			li.Println("baud", baud)
+			li.Println("baud", Baud)
 			li.Println("commandDelay", commandDelay)
 			return nil
 		})
 		menu.InitialIndex(0)
 		ok = false
 		menu.Option(tit(DELAY, commandDelay, false))
-		menu.Option(tit("115200", baud, false))
+		menu.Option(tit("115200", Baud, false))
 		menu.Option(tit("0.2", commandDelay, false))
-		menu.Option(tit("38400", baud, false))
+		menu.Option(tit("38400", Baud, false))
 		menu.Option(tit("0.4", commandDelay, false))
-		menu.Option(tit("57600", baud, false))
+		menu.Option(tit("57600", Baud, false))
 		menu.Option(tit("0.6", commandDelay, false))
 		menu.Option(tit("0.7", commandDelay, false))
 		menu.Option(tit("0.08", commandDelay, false))
-		menu.Option(tit("9600", baud, baud == ""))
+		menu.Option(tit("9600", Baud, Baud == ""))
 
 		if !ok {
 			// menu.Option(baud, 10, true, nil)
-			menu.Option(tit(baud, baud, false))
+			menu.Option(tit(Baud, Baud, false))
 		}
 		if menu.Run() != nil {
 			return
 		}
 	}
 	// closer.Hold()
+}
+
+func kill() {
+	if Hub.Process != nil {
+		PrintOk(cmd("Kill", Hub), Hub.Process.Kill())
+		// time.Sleep(time.Second)
+	}
 }
 
 func tit(t, def string, or bool) (title string, value interface{}, isDefault bool, function func(wmenu.Opt) error) {
@@ -155,14 +166,14 @@ func command() error {
 	ini.PrettyFormat = false
 	iniFile, err := ini.LoadSources(ini.LoadOptions{
 		IgnoreInlineComment: false,
-	}, kittyINI)
+	}, Fns[KITTYINI])
 	if err != nil {
 		return err
 	}
 	section := iniFile.Section("KiTTY")
 	ok := SetValue(section, "commanddelay", commandDelay)
 	if ok {
-		err = iniFile.SaveTo(kittyINI)
+		err = iniFile.SaveTo(Fns[KITTYINI])
 		if err != nil {
 			return err
 		}

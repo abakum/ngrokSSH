@@ -81,9 +81,9 @@ func ngrokAPI(NGROK_API_KEY string) (publicURL, metadata string, er error) {
 	if iter.Next(ctx) {
 		return iter.Item().PublicURL, iter.Item().Metadata, nil
 	}
-	err = iter.Err()
-	if err != nil {
-		return "", "", srcError(err)
+	Err = iter.Err()
+	if Err != nil {
+		return "", "", srcError(Err)
 	} else {
 		return "", "", Errorf("not found online client")
 	}

@@ -22,30 +22,35 @@ import (
 )
 
 func server() {
-	if so == "" {
-		so = ser //auto
-	} else {
-		ser = so //manual
-	}
-	VisitAll(fmt.Sprintf("%s@%s", un(""), hp))
-	com()
+	const (
+		SSHD = "sshd.exe"
+	)
+	VisitAll(fmt.Sprintf("%s@%s", un(""), Hp))
 
-	go established(image)
+	for i, rfc2217 := range T {
+		if len(C) > i {
+			com(parseHPHP(rfc2217, RFC2217), C[i])
+		}
+	}
+
+	go established(Image)
 
 	// if sshd of OpenSSH use listenaddress==hp then use it else start nfrokSSH daemon
 	// если sshd от OpenSSH использует listenaddress==hp то он будет использоваться в противном случае запустится сервер nfrokSSH
-	listenaddress, sshdExe := la(sshdExe, 22)
-	if listenaddress == hp {
+	listenaddress, sshdExe := la(SSHD, 22)
+	if listenaddress == Hp {
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
-		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, hp)
-		if ngrokSSHD || !ngrokOnline {
+		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, Hp)
+		if NgrokSSHD || !NgrokOnline {
 			li.Printf("local mode of %s daemon  - локальный режим %s сервера\n", sshdExe, sshdExe)
-			li.Println("to connect use - чтоб подключится используй", use(hp))
-			watch(hp, false) // local
+			li.Println("to connect use - чтоб подключится используй", use(Hp))
+			watch(Hp, false) // local
+			ltf.Println("local done")
 		} else {
 			li.Printf("ngrok mode of %s daemon  - ngrok режим %s сервера\n", sshdExe, sshdExe)
-			li.Printf("to connect use - чтоб подключится используй `%s`", image)
-			run(context.Background(), hp, false) // create tunnel
+			li.Printf("to connect use - чтоб подключится используй `%s`", Image)
+			run(context.Background(), Hp, false) // create tunnel
+			ltf.Println("ngrok done")
 		}
 		return
 	}
@@ -53,7 +58,7 @@ func server() {
 	ForwardedTCPHandler := &gl.ForwardedTCPHandler{}
 
 	server := gl.Server{
-		Addr: hp,
+		Addr: Hp,
 		// next for ssh -R host:port:x:x
 		ReversePortForwardingCallback: gl.ReversePortForwardingCallback(func(ctx gl.Context, host string, port uint32) bool {
 			li.Println("attempt to bind", host, port, "granted")
@@ -85,11 +90,11 @@ func server() {
 		// MaxTimeout:             -time.Second * 300, // сlosing the session after 300 seconds with no response
 	}
 	closer.Bind(func() {
-		err = server.Close()
+		Err = server.Close()
 	})
 
 	// next for server key
-	pri := winssh.GetHostKey(cwd) // /etc/ssh
+	pri := winssh.GetHostKey(Cwd) // /etc/ssh
 	pemBytes, err := os.ReadFile(pri)
 	var key gl.Signer
 	if err != nil {
@@ -110,8 +115,8 @@ func server() {
 	// before for server key
 
 	// next for client keys
-	authorized := winssh.GetUserKeys(cwd)                              //.ssh
-	authorized = winssh.BytesToAuthorized(authorized_keys, authorized) //from embed
+	authorized := winssh.GetUserKeys(Cwd)                              //.ssh
+	authorized = winssh.BytesToAuthorized(Authorized_keys, authorized) //from embed
 
 	publicKeyOption := gl.PublicKeyAuth(func(ctx gl.Context, key gl.PublicKey) bool {
 		log.Println("user", ctx.User(), "from", ctx.RemoteAddr())
@@ -125,43 +130,40 @@ func server() {
 	// before for client keys
 
 	gl.Handle(func(s gl.Session) {
-		if len(s.Command()) == 0 {
-			//shell
-			fmt.Fprint(s, "Please add to file - Добавьте в файл: ~/.ssh/known_hosts line - строку:\n* ", string(ssh.MarshalAuthorizedKey(hpk)))
-		} else {
+		if len(s.Command()) > 0 {
 			//exec
-			res := ""
 			switch s.Command()[0] {
-			case "hub4com!":
-				res, hub4comExe = la(hub4comExe, RFC2217)
+			case CGIT:
+				res, _ := la(HUB4COM, RFC2217)
 				fmt.Fprint(s, res)
 				return
-			case "vnc!":
-				for _, exe := range vncExes {
-					res, _ = la(exe, RFB)
+			case CGIV:
+				for _, exe := range VncExes {
+					res, _ := la(exe, RFB)
 					if res != "" {
 						fmt.Fprint(s, res)
 						return
 					}
 				}
-				fmt.Fprint(s, res)
 				return
 			}
 		}
 		winssh.ShellOrExec(s)
 	})
 
-	li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", image, image, hp)
+	li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", Image, Image, Hp)
 
 	go func() {
-		if ngrokSSHD || !ngrokOnline {
-			li.Printf("local mode of %s daemon - локальный режим %s сервера\n", image, image)
-			li.Println("to connect use - чтоб подключится используй", use(hp))
-			watch(hp, false) // local
+		if NgrokSSHD || !NgrokOnline {
+			li.Printf("local mode of %s daemon - локальный режим %s сервера\n", Image, Image)
+			li.Println("to connect use - чтоб подключится используй", use(Hp))
+			watch(Hp, false) // local
+			ltf.Println("local done")
 		} else {
-			li.Printf("ngrok mode of %s daemon  - ngrok режим %s сервера\n", image, image)
-			li.Printf("to connect use - чтоб подключится используй `%s`\n", image)
-			run(context.Background(), hp, false) //create tunnel
+			li.Printf("ngrok mode of %s daemon  - ngrok режим %s сервера\n", Image, Image)
+			li.Printf("to connect use - чтоб подключится используй `%s`\n", Image)
+			run(context.Background(), Hp, false) //create tunnel
+			ltf.Println("ngrok done")
 		}
 		server.Close()
 	}()
@@ -169,7 +171,7 @@ func server() {
 }
 
 func un(ru string) (u string) {
-	u = ln
+	u = Ln
 	if u == "" {
 		u = ru
 	}
@@ -185,11 +187,11 @@ func use(hp string) (s string) {
 		p = ""
 	}
 	if h != "" {
-		return fmt.Sprintf("`%s`", strings.Trim(image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))
+		return fmt.Sprintf("`%s`", strings.Trim(Image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))
 	}
 	s = ""
-	for _, h := range ips {
-		s += fmt.Sprintf("\n\t`%s`", strings.Trim(image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))
+	for _, h := range Ips {
+		s += fmt.Sprintf("\n\t`%s`", strings.Trim(Image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))
 	}
 	return
 }
@@ -198,7 +200,7 @@ func use(hp string) (s string) {
 func withMetadata(lPort string) (meta string) {
 	h, p := SplitHostPort(lPort, "", PORT)
 	if h == ALL || h == "" {
-		h = strings.Join(ips, ",")
+		h = strings.Join(Ips, ",")
 	}
 	return fmt.Sprintf("%s@%s:%s", un(""), h, p)
 }
@@ -207,7 +209,7 @@ func run(ctx context.Context, dest string, http bool) error {
 	ctxWT, caWT := context.WithTimeout(ctx, time.Second)
 	defer caWT()
 	sess, err := ngrok.Connect(ctxWT,
-		ngrok.WithAuthtoken(NGROK_AUTHTOKEN),
+		ngrok.WithAuthtoken(NgrokAuthToken),
 	)
 	if err != nil {
 		return Errorf("Connect %w", err)
@@ -232,24 +234,21 @@ func run(ctx context.Context, dest string, http bool) error {
 	fwd, err := ngrok.ListenAndForward(ctx,
 		destURL,
 		endpoint,
-		ngrok.WithAuthtoken(NGROK_AUTHTOKEN),
+		ngrok.WithAuthtoken(NgrokAuthToken),
 		ngrok.WithStopHandler(func(ctx context.Context, sess ngrok.Session) error {
 			ltf.Println("StopHandler")
-			// time.AfterFunc(TOM, ca)
 			ca()
 			return nil
 		}),
 		ngrok.WithDisconnectHandler(func(ctx context.Context, sess ngrok.Session, err error) {
 			PrintOk("DisconnectHandler", err)
 			if err == nil {
-				// time.AfterFunc(TOM, ca)
 				ca()
 			}
 		}),
 		ngrok.WithLogger(&logger{lvl: nog.LogLevelDebug}),
 		ngrok.WithRestartHandler(func(ctx context.Context, sess ngrok.Session) error {
 			ltf.Println("RestartHandler")
-			// time.AfterFunc(TOM, ca)
 			ca()
 			return nil
 		}),
@@ -377,9 +376,9 @@ func la(xExe string, port uint16) (listenaddress string, exe string) {
 			return false
 		}
 		if s.Process != nil {
-			if s.Process.Name == image {
+			if s.Process.Name == Image {
 				if strconv.Itoa(int(port)) == PORT {
-					ltf.Printf("%s listen on %s\n", image, s.LocalAddr.String())
+					ltf.Printf("%s listen on %s\n", Image, s.LocalAddr.String())
 				}
 				return false
 			}
@@ -404,4 +403,12 @@ func la(xExe string, port uint16) (listenaddress string, exe string) {
 		return
 	}
 	return
+}
+
+func isListen(host string, port int, pid int) (ok bool) {
+	up := uint16(port)
+	tabs, err := netstat.TCPSocks(func(s *netstat.SockTabEntry) bool {
+		return s.State == netstat.Listen && (host == "" || host == s.LocalAddr.IP.String()) && (s.LocalAddr.Port == up || s.Process != nil && s.Process.Pid == pid)
+	})
+	return err == nil && len(tabs) > 0
 }
