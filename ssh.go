@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +31,7 @@ const (
 )
 
 var (
-	//go:embed authorized_keys
+	// go:embed authorized_keys
 	Authorized_keys []byte
 )
 
@@ -85,46 +84,58 @@ func client(user, host, port, listenAddress string) {
 		return
 	}
 
-	for _, o := range R {
-		tryBindR(con, parseHPHP(o, USER)...)
+	for _, o := range V {
+		hphp, e := cgi(con, Image+" "+CGIV, o, RFB, &b)
+		if e != nil {
+			continue
+		}
+		menuVoption = append(menuVoption, strings.Join(hphp, ":"))
 	}
 
-	i5, er := strconv.Atoi(S)
-	if er == nil && !isListen("", i5, 0) {
-		L = append(L, S)
-		// gosysproxy.SetGlobalProxy("socks=" + net.JoinHostPort(LH, S))
-		// setX("all_proxy", "socks://"+net.JoinHostPort(LH, S))
-		proxy.RealSet("socks", net.JoinHostPort(LH, S))
-		closer.Bind(func() {
-			// gosysproxy.Off()
-			// setX("all_proxy", "")
-			proxy.RealSet("", "")
-		})
+	if actual(flag.CommandLine, "S") || len(menuVoption) > 0 {
+		i5, er := strconv.Atoi(S)
+		if er == nil && !isListen("", i5, 0) {
+			L = append(L, S)
+			// gosysproxy.SetGlobalProxy("socks=" + net.JoinHostPort(LH, S))
+			// setX("all_proxy", "socks://"+net.JoinHostPort(LH, S))
+			proxy.RealSet("socks", net.JoinHostPort(LH, S))
+			closer.Bind(func() {
+				// gosysproxy.Off()
+				// setX("all_proxy", "")
+				proxy.RealSet("", "")
+			})
+		}
 	}
+
 	for _, o := range L {
 		tryBindL(con, parseHPHP(o, USER)...)
 	}
 
-	if len(V) > 0 {
-		vvO := []string{
-			"-ChangeServerDefaultPrinter=0",
-			"-EnableChat=0",
-			"-Scaling=None",
-			"-SecurityNotificationTimeout=0",
-			"-ShareFiles=0",
-			"-UserName=",
-			"-VerifyId=0",
-			"-WarnUnencrypted=0",
-			"-SingleSignOn=0",
-			"-ProxyServer=",
-		}
-		for _, o := range V {
-			hphp, ev := cgi(con, CGIV, o, RFB, &b)
-			if ev != nil {
+	for _, o := range R {
+		tryBindR(con, parseHPHP(o, USER)...)
+	}
+
+	if So == "" {
+		letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
+	} else {
+		for _, o := range T {
+			hphp, e := cgi(con, Image+" "+CGIT, o, RFC2217, &b)
+			if e != nil {
 				continue
 			}
-			menuVoption = append(menuVoption, strings.Join(hphp, ":"))
+			MenuToption = append(MenuToption, strings.Join(hphp, ":"))
 		}
+	}
+
+	ska(con, session, false)
+	switch {
+	case actual(flag.CommandLine, "T"):
+		menuVid = len(menuVoption) + 1
+		if len(MenuToption) == 1 {
+			tty(parseHPHP(MenuToption[0], RFC2217)...)
+		}
+	case actual(flag.CommandLine, "V"):
+		menuVid = 1
 		opts := []string{GEOMETRY}
 		if psCount(REALVAB, "", 0) == 0 {
 			opts = append(opts,
@@ -134,82 +145,73 @@ func client(user, host, port, listenAddress string) {
 			)
 		}
 		vab := exec.Command(Fns[REALVAB], opts...)
-		li.Println(cmd("Start", vab), vab.Start())
-		if len(menuVoption) > 0 {
-			ska(con, session, false)
-			for {
-				menuV := wmenu.NewMenu("Choose target for console - выбери цель подключения консоли `VNC`")
-				menuV.Action(func(opts []wmenu.Opt) error {
-					for _, opt := range opts {
-						menuVid = opt.ID
-						hphp := parseHPHP(opt.Text, RFB)
-						vv := exec.Command(Fns[REALVV], append(vvO, net.JoinHostPort(hphp[0], hphp[1]))...)
-						PrintOk(cmd("Start", vv), vv.Start())
-						return nil
-					}
+		PrintOk(cmd("Start", vab), vab.Start())
+		if len(menuVoption) == 1 {
+			mV(menuVoption[0])
+		}
+	default:
+		mO(title, user, host, port)
+	}
+	for {
+		menuV := wmenu.NewMenu(MENU)
+		menuV.Action(func(opts []wmenu.Opt) error {
+			for _, opt := range opts {
+				menuVid = opt.ID
+				switch {
+				case menuVid == 0:
+					mO(title, user, host, port)
 					return nil
-				})
-				for i, opt := range menuVoption {
-					menuV.Option(opt, nil, i == menuVid, nil)
-				}
-				if menuV.Run() != nil {
-					return
+				case menuVid > len(menuVoption):
+					tty(parseHPHP(opt.Text, RFC2217)...)
+					return nil
+				default:
+					mV(opt.Text)
+					return nil
 				}
 			}
-		} else {
-			ska(con, session, true)
+			return nil
+		})
+		menuV.Option(title, nil, menuVid == 0, nil)
+		for i, opt := range append(menuVoption, MenuToption...) {
+			menuV.Option(opt, nil, menuVid == i+1, nil)
+		}
+		if menuV.Run() != nil {
 			return
 		}
 	}
+}
 
-	if len(T) > 0 {
-		if So == "" {
-			letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
-		} else {
-			for _, o := range T {
-				hphp, e := cgi(con, CGIT, o, RFC2217, &b)
-				if e != nil {
-					continue
-				}
-				MenuToption = append(MenuToption, strings.Join(hphp, ":"))
-			}
-			if len(MenuToption) > 0 {
-				ska(con, session, false)
-				if len(MenuToption) == 1 {
-					tty(parseHPHP(MenuToption[0], RFC2217)...)
-					return
-				}
-				for {
-					menuT := wmenu.NewMenu(MENUT)
-					menuT.Action(func(opts []wmenu.Opt) error {
-						for _, opt := range opts {
-							MenuTid = opt.ID
-							tty(parseHPHP(opt.Text, RFC2217)...)
-							return nil
-						}
-						return nil
-					})
-					for i, opt := range MenuToption {
-						menuT.Option(opt, nil, i == MenuTid, nil)
-					}
-					if menuT.Run() != nil {
-						return
-					}
-				}
-			} else {
-				ska(con, session, true)
-				return
-			}
-		}
+func mV(opt string) {
+	vvO := []string{
+		"-ChangeServerDefaultPrinter=0",
+		"-EnableChat=0",
+		"-Scaling=None",
+		"-SecurityNotificationTimeout=0",
+		"-ShareFiles=0",
+		"-UserName=",
+		"-VerifyId=0",
+		"-WarnUnencrypted=0",
+		"-SingleSignOn=0",
+		"-ProxyServer=",
 	}
+	hphp := parseHPHP(opt, RFB)
+	vv := exec.Command(Fns[REALVV], append(vvO, net.JoinHostPort(hphp[0], hphp[1]))...)
+	PrintOk(cmd("Start", vv), vv.Start())
+}
 
+func mO(title, user, host, port string) {
 	opts := []string{
 		title,
 		"-title",
 		title,
-		"-hostkey",
-		strings.Split(Known_host, " ")[2],
 	}
+	for _, key := range KnownKeys {
+		opts = append(opts,
+			"-hostkey",
+			ssh.FingerprintSHA256(key),
+		)
+	}
+
 	sshExe := Fns[KITTY]
 	if O {
 		sshExe = OpenSSH
@@ -220,7 +222,7 @@ func client(user, host, port, listenAddress string) {
 			"-p",
 			port,
 			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", filepath.Join(Cwd, ROOT, "known_host")),
+			fmt.Sprintf("UserKnownHostsFile=%s", Fns[KNOWN_HOSTS]),
 		}
 	}
 	if A {
@@ -231,12 +233,11 @@ func client(user, host, port, listenAddress string) {
 		ki.Stdout = os.Stdout
 		ki.Stderr = os.Stdout
 		ki.Stdin = os.Stdin
+		li.Println(cmd("Run", ki))
+		ki.Run()
 	} else {
-		go established(Image)
+		PrintOk(cmd("Start", ki), ki.Start())
 	}
-	li.Println(cmd("Run", ki))
-	Err = srcError(ki.Run())
-	PrintOk(cmd("Close", ki), Err)
 }
 
 func fromNgrok(publicURL, meta string) (user, host, port, listenAddress string) {
@@ -257,6 +258,7 @@ func fromNgrok(publicURL, meta string) (user, host, port, listenAddress string) 
 			if listenAddress == "" {
 				listenAddress = net.JoinHostPort(ip, p)
 			}
+			ltf.Println("try local")
 			if sshTry(u, ip, p) == nil {
 				user, host, port = u, ip, p
 				return
@@ -269,6 +271,7 @@ func fromNgrok(publicURL, meta string) (user, host, port, listenAddress string) 
 	}
 	h := tcp.Hostname()
 	p = tcp.Port()
+	ltf.Println("try over ngrok")
 	if sshTry(u, h, p) == nil {
 		user, host, port = u, h, p
 	}
@@ -329,7 +332,7 @@ func sshTry(u, h, p string) (err error) {
 	config := ssh.ClientConfig{
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signers...)},
 		// HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		HostKeyCallback: HostKeyCallback(Known_host),
+		HostKeyCallback: FixedHostKeys(KnownKeys...), //HostKeyCallback(Fns[KNOWN_HOSTS]),
 		User:            u,
 	}
 	client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
@@ -340,17 +343,12 @@ func sshTry(u, h, p string) (err error) {
 	return
 }
 
-func HostKeyCallback(tk string) ssh.HostKeyCallback {
-	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		ak := "* " + strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
-		if tk != ak {
-			Err = fmt.Errorf("hostname %s, remote %v\nexpected %q\nbut  got %q", hostname, remote, tk, ak)
-			ltf.Println(Err)
-			return Err
-		}
+func FingerprintSHA256(pubKey ssh.PublicKey) string {
+	return pubKey.Type() + " " + ssh.FingerprintSHA256(pubKey)
+}
 
-		return nil
-	}
+func MarshalAuthorizedKey(key ssh.PublicKey) string {
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
 }
 
 func NewConn() (sock net.Conn, err error) {
@@ -385,13 +383,25 @@ func NewConn() (sock net.Conn, err error) {
 }
 
 func SplitHostPort(hp, host, port string) (h, p string) {
+	hp = strings.ReplaceAll(hp, "*", ALL)
 	h, p, err := net.SplitHostPort(hp)
 	if err == nil {
+		if p == "" {
+			p = port
+		}
+		if h == "" {
+			h = host
+		}
 		return h, p
 	}
 	_, err = strconv.Atoi(hp)
 	if err == nil {
+		// fmt.Println("host, hp")
 		return host, hp
+	}
+	// fmt.Println("hp, port")
+	if hp == "" {
+		hp = host
 	}
 	return hp, port
 }
@@ -503,7 +513,7 @@ func parseHPHP(opt string, port int) (res []string) {
 			hphp[2] = LH
 		}
 		if hphp[3] == "" { // :::
-			hphp[3] = bp
+			hphp[3] = hphp[1]
 		}
 		return hphp[:4]
 	case len(hphp) > 2: // h:p:h
@@ -527,4 +537,31 @@ func VisitAll(uhp string) {
 		}
 	})
 	ltf.Printf("%s %s%s \n", Image, o, strings.TrimSuffix(uhp, ":"+PORT))
+}
+
+type fixedHostKeys struct {
+	keys []ssh.PublicKey
+}
+
+func (f *fixedHostKeys) check(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	if len(f.keys) == 0 {
+		return fmt.Errorf("ssh: no required host keys")
+	}
+	km := key.Marshal()
+	for _, fKey := range f.keys {
+		if fKey == nil {
+			continue
+		}
+		if bytes.Equal(km, fKey.Marshal()) {
+			return nil
+		}
+	}
+	return fmt.Errorf("ssh: no one host key from %v match %s", f.keys, FingerprintSHA256(key))
+}
+
+// FixedHostKeys returns a function for use in
+// ClientConfig.HostKeyCallback to accept specific host keys.
+func FixedHostKeys(keys ...ssh.PublicKey) ssh.HostKeyCallback {
+	hk := &fixedHostKeys{keys}
+	return hk.check
 }

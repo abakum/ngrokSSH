@@ -1,2 +1,5 @@
 WarnOnClose\0\
 Maximize\0\
+HostKey\ecdsa,ed25519,rsa,ed448,WARN,dsa\
+LogFileName\C%3A%5Ctemp%5Ckitty.log\
+LogType\0\
