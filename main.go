@@ -76,7 +76,6 @@ var (
 	//go:embed VERSION
 	Ver string
 
-	// go:embed bin/hub4com.exe bin/kitty_portable.exe bin/kitty.ini bin/Sessions/Default%20Settings bin/Proxies/* bin/vncaddrbook.exe bin/AB/* bin/vncviewer.exe bin/known_hosts
 	//go:embed bin/*.exe bin/*.ini bin/Sessions/Default%20Settings bin/Proxies/1080 bin/AB/*
 	Bin embed.FS
 
@@ -93,7 +92,8 @@ var (
 	Baud,
 	S,
 	OpenSSH,
-	AuthorizedKeysIni string
+	AuthorizedKeysIni,
+	KnownHosts string
 
 	Err error
 
@@ -104,7 +104,6 @@ var (
 	O,
 	h bool
 
-	VncExes = []string{"winvnc.exe", "tvnserver.exe", "winvnc4.exe", "vncserver.exe", "repeater.exe"}
 	L,
 	R,
 	V,
@@ -134,22 +133,11 @@ func main() {
 		sp string
 		err error
 	)
-
 	// cgi
 	if len(os.Args) == 2 {
-		switch os.Args[1] {
-		case CGIT: // ngrokSSH.exe -t
-			res, _ := la(HUB4COM, RFC2217)
+		ret, res := tv(os.Args[1])
+		if ret {
 			fmt.Print(res)
-			return
-		case CGIV: // ngrokSSH.exe -v
-			for _, exe := range VncExes {
-				res, _ := la(exe, RFB)
-				if res != "" {
-					fmt.Print(res)
-					return
-				}
-			}
 			return
 		}
 	}
@@ -164,10 +152,10 @@ func main() {
 	if Err != nil {
 		letf.Fatal(Err)
 	}
-
 	proxy.RealSet("", "")
 
 	Image = filepath.Base(Exe)
+
 	Fns, _ = UnloadEmbedded(Bin, ROOT, Cwd, ROOT, true)
 
 	pri := winssh.GetHostKey(Cwd)
@@ -183,10 +171,10 @@ func main() {
 	pubKey := Signer.PublicKey()
 	li.Println("HostKey", FingerprintSHA256(pubKey))
 	rest := append([]byte("* "), ssh.MarshalAuthorizedKey(pubKey)...)
-	knownHosts := filepath.Join(Cwd, ROOT, KNOWN_HOSTS)
-	_, err = os.Stat(knownHosts)
+	KnownHosts = filepath.Join(Cwd, ROOT, KNOWN_HOSTS)
+	_, err = os.Stat(KnownHosts)
 	if os.IsNotExist(err) {
-		PrintOk("WriteFile "+knownHosts, os.WriteFile(knownHosts, rest, FiLEMODE))
+		PrintOk("WriteFile "+KnownHosts, os.WriteFile(KnownHosts, rest, FiLEMODE))
 	}
 
 	AuthorizedKeysIni = filepath.Join(Cwd, ROOT, AUTHORIZED_KEYS)
@@ -198,7 +186,7 @@ func main() {
 		PrintOk("WriteFile "+AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, MarshalAuthorizedKeys(AuthorizedKeys...), FiLEMODE))
 	}
 
-	rest, err = os.ReadFile(knownHosts)
+	rest, err = os.ReadFile(KnownHosts)
 	if err != nil {
 		letf.Println(err)
 	} else {
@@ -592,4 +580,27 @@ func MarshalAuthorizedKeys(AuthorizedKeys ...ssh.PublicKey) []byte {
 		_, _ = b.Write(ssh.MarshalAuthorizedKey(pubKey))
 	}
 	return b.Bytes()
+}
+
+func tv(s string) (ret bool, res string) {
+	switch s {
+	case CGIT: // ngrokSSH.exe -t
+		res, _ = la(HUB4COM, RFC2217)
+		return true, res
+	case CGIV: // ngrokSSH.exe -v
+		for _, exe := range []string{
+			"winvnc.exe",
+			"tvnserver.exe",
+			"winvnc4.exe",
+			"vncserver.exe",
+			"repeater.exe",
+		} {
+			res, _ = la(exe, RFB)
+			if res != "" {
+				return true, res
+			}
+		}
+		return true, res
+	}
+	return false, res
 }

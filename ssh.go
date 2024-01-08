@@ -30,11 +30,6 @@ const (
 	REALVAB = "vncaddrbook.exe"
 )
 
-var (
-	// go:embed authorized_keys
-	Authorized_keys []byte
-)
-
 func client(user, host, port, listenAddress string) {
 	const (
 		GEOMETRY = "-geometry=300x600+0+0"
@@ -222,7 +217,7 @@ func mO(title, user, host, port string) {
 			"-p",
 			port,
 			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", Fns[KNOWN_HOSTS]),
+			fmt.Sprintf("UserKnownHostsFile=%s", KnownHosts),
 		}
 	}
 	if A {
@@ -296,25 +291,39 @@ func setX(key, val string) {
 	PrintOk(cmd("Run", set), srcError(set.Run()))
 }
 
-func setProxy(ProxyType, ProxyServer string) {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\RealVNC\vncviewer`, registry.SET_VALUE)
+func GetPath(key, val string) {
+	set := exec.Command("setx", key, val)
+	// set.Stdout = os.Stdout
+	PrintOk(cmd("Run", set), srcError(set.Run()))
+}
+
+func SetExpandStringValues(k registry.Key, path string, mnv map[string]string) {
+	key, err := registry.OpenKey(k, path, registry.SET_VALUE)
 	if err != nil {
 		return
 	}
-	defer k.Close()
-	k.SetStringValue("ProxyType", ProxyType)
-	k.SetStringValue("ProxyServer", ProxyServer)
+	defer key.Close()
+	for name, val := range mnv {
+		key.SetExpandStringValue(name, val)
+	}
+}
+
+func GetStringValues(k registry.Key, path string, names ...string) (vals []string) {
+	vals = make([]string, len(names))
+	key, err := registry.OpenKey(k, path, registry.QUERY_VALUE)
+	if err != nil {
+		return
+	}
+	defer key.Close()
+	for i, name := range names {
+		vals[i], _, _ = key.GetStringValue(name)
+	}
+	return
 }
 
 func getProxy() (ProxyType, ProxyServer string) {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\RealVNC\vncviewer`, registry.QUERY_VALUE)
-	if err != nil {
-		return
-	}
-	defer k.Close()
-	ProxyType, _, _ = k.GetStringValue("ProxyType")
-	ProxyServer, _, _ = k.GetStringValue("ProxyServer")
-	return
+	vals := GetStringValues(registry.CURRENT_USER, `SOFTWARE\RealVNC\vncviewer`, "ProxyType", "ProxyServer")
+	return vals[0], vals[1]
 }
 
 func sshTry(u, h, p string) (err error) {
@@ -330,9 +339,8 @@ func sshTry(u, h, p string) (err error) {
 		return
 	}
 	config := ssh.ClientConfig{
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(signers...)},
-		// HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		HostKeyCallback: FixedHostKeys(KnownKeys...), //HostKeyCallback(Fns[KNOWN_HOSTS]),
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signers...)},
+		HostKeyCallback: FixedHostKeys(KnownKeys...),
 		User:            u,
 	}
 	client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)

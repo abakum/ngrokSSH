@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abakum/go-netstat/netstat"
@@ -41,11 +45,35 @@ func server() {
 
 	// if sshd of OpenSSH use listenaddress==hp then use it else start nfrokSSH daemon
 	// если sshd от OpenSSH использует listenaddress==hp то он будет использоваться в противном случае запустится сервер nfrokSSH
+	var once sync.Once
 	for {
 		listenaddress, sshdExe := la(SSHD, 22)
 		if listenaddress != Hp {
 			break
 		}
+		once.Do(func() {
+			for _, dir := range filepath.SplitList(os.Getenv("Path")) {
+				Symlink := filepath.Join(dir, Image)
+				exe, err := os.Readlink(Symlink)
+				if os.IsNotExist(err) {
+					os.Symlink(Exe, Symlink)
+				} else {
+					if exe != Exe {
+						if os.Remove(Symlink) == nil {
+							os.Symlink(Exe, Symlink)
+						}
+					}
+				}
+				PrintOk(os.Readlink(Symlink))
+				_, err = exec.LookPath(Image)
+				if err == nil {
+					break
+				}
+				if errors.Is(err, exec.ErrDot) {
+					break
+				}
+			}
+		})
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
 		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, Hp)
 		if NgrokSSHD || !NgrokOnline {
@@ -116,21 +144,9 @@ func server() {
 
 		gl.Handle(func(s gl.Session) {
 			if len(s.Command()) > 1 && strings.HasSuffix(s.Command()[0], Image) {
-				switch s.Command()[1] {
-				case CGIT: // ngrokSSH.exe -t
-					res, _ := la(HUB4COM, RFC2217)
+				ret, res := tv(s.Command()[1])
+				if ret {
 					fmt.Fprint(s, res)
-					s.Close()
-					return
-				case CGIV: // ngrokSSH.exe -v
-					for _, exe := range VncExes {
-						res, _ := la(exe, RFB)
-						if res != "" {
-							fmt.Fprint(s, res)
-							s.Close()
-							return
-						}
-					}
 					s.Close()
 					return
 				}
@@ -387,7 +403,7 @@ func la(xExe string, port uint16) (listenaddress string, exe string) {
 		return
 	}
 	for _, s := range tabs {
-		listenaddress = s.LocalAddr.String()
+		listenaddress = strings.Replace(s.LocalAddr.String(), ALL, LH, 1)
 		// ltf.Printf("%s listen on %s\n", exe, listenaddress)
 		return
 	}
