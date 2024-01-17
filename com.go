@@ -39,7 +39,7 @@ func com(hphp []string, so string) {
 	Hub.Stdout = os.Stdout
 	Hub.Stderr = os.Stderr
 	go func() {
-		li.Println(cmd("Run", Hub))
-		PrintOk(cmd("Close", Hub), srcError(Hub.Run()))
+		Println(cmd("Run", Hub))
+		Println(cmd("Close", Hub), Hub.Run())
 	}()
 }

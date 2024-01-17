@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
+	"errors"
 	"os"
 	"time"
 
 	"github.com/ngrok/ngrok-api-go/v5"
+	"github.com/ngrok/ngrok-api-go/v5/tunnel_sessions"
 	"github.com/ngrok/ngrok-api-go/v5/tunnels"
+)
+
+var (
+	ErrNgrokOnlineNoTunnel = errors.New("not found online client")
+	ErrEmptyNgrokApiKey    = errors.New("empty NGROK_API_KEY")
 )
 
 func Getenv(key, val string) string {
@@ -21,58 +24,19 @@ func Getenv(key, val string) string {
 	return s
 }
 
-func ngrokWeb() (publicURL string, forwardsTo string, err error) {
-	web_addr := Getenv("web_addr", "localhost:4040")
-	var client struct {
-		Tunnels []struct {
-			// Name      string `json:"name"`
-			// ID        string `json:"ID"`
-			// URI       string `json:"uri"`
-			PublicURL string `json:"public_url"`
-			// Proto     string `json:"proto"`
-			Config struct {
-				Addr string `json:"addr"`
-				// Inspect bool   `json:"inspect"`
-			} `json:"config"`
-		} `json:"tunnels"`
-		// URI string `json:"uri"`
-	}
-	resp, err := http.Get("http://" + web_addr + "/api/tunnels")
-	if err != nil {
-		return "", "", srcError(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		err = fmt.Errorf("http.Get resp.StatusCode: %v", resp.StatusCode)
-		return "", "", Errorf("http.Get resp.StatusCode: %v", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", srcError(err)
-	}
-	err = json.Unmarshal(body, &client)
-	if err != nil {
-		return "", "", srcError(err)
-	}
-	for _, tunnel := range client.Tunnels {
-		if true { //free version allow only one tunnel
-			return tunnel.PublicURL, tunnel.Config.Addr, nil
-		}
-	}
-	return "", "", Errorf("not found online client")
-}
-
-// get ngrok info of first tunnel
-func ngrokAPI(NGROK_API_KEY string) (publicURL, metadata string, er error) {
+// get publicURL and metadata of first tunnel by NGROK_API_KEY
+func ngrokGet(NGROK_API_KEY string) (publicURL, metadata string, err error) {
 	if NGROK_API_KEY == "" {
-		return "", "", Errorf("empty NGROK_API_KEY")
+		return "", "", srcError(ErrEmptyNgrokApiKey)
 	}
 
 	// construct the api client
 	clientConfig := ngrok.NewClientConfig(NGROK_API_KEY)
 
-	// list all online client
+	// construct the tunnels client
 	client := tunnels.NewClient(clientConfig)
+
+	// list all online client
 	iter := client.List(nil)
 
 	ctx, ca := context.WithTimeout(context.Background(), time.Second*3)
@@ -81,10 +45,39 @@ func ngrokAPI(NGROK_API_KEY string) (publicURL, metadata string, er error) {
 	if iter.Next(ctx) {
 		return iter.Item().PublicURL, iter.Item().Metadata, nil
 	}
-	Err = iter.Err()
-	if Err != nil {
-		return "", "", srcError(Err)
-	} else {
-		return "", "", Errorf("not found online client")
+	err = iter.Err()
+	if err != nil {
+		return "", "", srcError(err)
 	}
+	return "", "", srcError(ErrNgrokOnlineNoTunnel)
+}
+
+// restart first tunnel sessions by NGROK_API_KEY
+func ngrokRestart(NGROK_API_KEY string) (id string, err error) {
+	if NGROK_API_KEY == "" {
+		return "", srcError(ErrEmptyNgrokApiKey)
+	}
+
+	// construct the api client
+	clientConfig := ngrok.NewClientConfig(NGROK_API_KEY)
+
+	// construct the tunnel_sessions client
+	client := tunnel_sessions.NewClient(clientConfig)
+
+	// list all online tClient
+	iter := client.List(nil)
+
+	ctx, ca := context.WithTimeout(context.Background(), time.Second*3)
+	defer ca()
+	//free version allow only one tunnel
+	if iter.Next(ctx) {
+		id = iter.Item().ID
+		err = client.Restart(ctx, id)
+		return
+	}
+	err = iter.Err()
+	if err != nil {
+		return "", srcError(err)
+	}
+	return "", srcError(ErrNgrokOnlineNoTunnel)
 }

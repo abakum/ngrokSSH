@@ -26,3 +26,5 @@ go.sum
 *.exe
 *.RND
 *.vnc
+*.bat
+*.lnk

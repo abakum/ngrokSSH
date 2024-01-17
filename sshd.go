@@ -2,17 +2,16 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/abakum/go-netstat/netstat"
@@ -25,14 +24,9 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const (
-	TOS = time.Second * 7
-)
-
 func server() {
-	const (
-		SSHD = "sshd.exe"
-	)
+	ctxRWE, caRW := context.WithCancel(context.Background())
+	defer caRW()
 	VisitAll(fmt.Sprintf("%s@%s", un(""), Hp))
 
 	for i, rfc2217 := range T {
@@ -41,138 +35,189 @@ func server() {
 		}
 	}
 
-	go established(Image)
-
 	// if sshd of OpenSSH use listenaddress==hp then use it else start nfrokSSH daemon
 	// если sshd от OpenSSH использует listenaddress==hp то он будет использоваться в противном случае запустится сервер nfrokSSH
-	var once sync.Once
-	for {
-		listenaddress, sshdExe := la(SSHD, 22)
-		if listenaddress != Hp {
-			break
-		}
-		once.Do(func() {
+	listenaddress, sshdExe := la(SSHD, 22)
+	if listenaddress != "" {
+		go established(ctxRWE, sshdExe)
+	}
+	if listenaddress == Hp {
+		Once.Do(func() {
+			var (
+				exe string
+				err error
+				ExeInfo,
+				SymlinkInfo fs.FileInfo
+				src,
+				dst *os.File
+				written int64
+			)
+			if !HardExe { // copy
+				ExeInfo, err = os.Stat(Exe)
+				if err != nil {
+					Println(Exe, err)
+					return
+				}
+				src, err = os.Open(Exe)
+				if err != nil {
+					Println(Exe, err)
+					return
+				}
+				defer src.Close()
+
+			}
 			for _, dir := range filepath.SplitList(os.Getenv("Path")) {
+				if !HardPath(Drives, dir) {
+					continue
+				}
 				Symlink := filepath.Join(dir, Image)
-				exe, err := os.Readlink(Symlink)
-				if os.IsNotExist(err) {
-					os.Symlink(Exe, Symlink)
+				if HardExe {
+					Println("os.Symlink", Exe, Symlink)
+					exe, err = os.Readlink(Symlink)
+					if os.IsNotExist(err) {
+						err = os.Symlink(Exe, Symlink)
+					} else {
+						err = nil
+						if exe != Exe {
+							err = os.Remove(Symlink)
+							if err == nil {
+								err = os.Symlink(Exe, Symlink)
+							}
+						}
+					}
 				} else {
-					if exe != Exe {
-						if os.Remove(Symlink) == nil {
-							os.Symlink(Exe, Symlink)
+					Println("io.Copy", Symlink, Exe)
+					SymlinkInfo, err = os.Stat(Symlink)
+					if !(err == nil && ExeInfo.Size() == SymlinkInfo.Size()) {
+						dst, err = os.Create(Symlink)
+						if err != nil {
+							Println(Symlink, err)
+							continue
+						}
+						defer dst.Close()
+						written, err = io.Copy(dst, src)
+						if err != nil || written != ExeInfo.Size() {
+							dst.Close()
+							Println(Symlink, err)
+							continue
 						}
 					}
 				}
-				PrintOk(os.Readlink(Symlink))
-				_, err = exec.LookPath(Image)
+				Println(Symlink, err)
 				if err == nil {
-					break
-				}
-				if errors.Is(err, exec.ErrDot) {
-					break
+					return
 				}
 			}
 		})
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
 		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, Hp)
-		if NgrokSSHD || !NgrokOnline {
-			li.Printf("local mode of %s daemon  - локальный режим %s сервера\n", sshdExe, sshdExe)
+		if NgrokHasTunnel || !NgrokOnline {
+			li.Printf("LAN mode of %s daemon  - Локальный режим %s сервера\n", sshdExe, sshdExe)
 			li.Println("to connect use - чтоб подключится используй", use(Hp))
-			watch(Hp, false) // local
-			ltf.Println("local done")
+
+			watch(ctxRWE, caRW, Hp) // local
+			Println("watch done")
 		} else {
-			li.Printf("ngrok mode of %s daemon  - ngrok режим %s сервера\n", sshdExe, sshdExe)
+			li.Printf("Ngrok mode of %s daemon  - Ngrok режим %s сервера\n", sshdExe, sshdExe)
 			li.Printf("to connect use - чтоб подключится используй `%s`", Image)
-			run(context.Background(), Hp, false) // create tunnel
-			ltf.Println("ngrok done")
+
+			go established(ctxRWE, Image)
+			Println("run done", run(ctxRWE, caRW, Hp, false)) // create tunnel
 		}
-		time.Sleep(TOS)
+		return
 	}
 
-	for {
-		ForwardedTCPHandler := &gl.ForwardedTCPHandler{}
+	ForwardedTCPHandler := &gl.ForwardedTCPHandler{}
 
-		server := gl.Server{
-			Addr: Hp,
-			// next for ssh -R host:port:x:x
-			ReversePortForwardingCallback: gl.ReversePortForwardingCallback(func(ctx gl.Context, host string, port uint32) bool {
-				li.Println("attempt to bind", host, port, "granted")
-				return true
-			}),
-			RequestHandlers: map[string]gl.RequestHandler{
-				"tcpip-forward":        ForwardedTCPHandler.HandleSSHRequest, // to allow remote forwarding
-				"cancel-tcpip-forward": ForwardedTCPHandler.HandleSSHRequest, // to allow remote forwarding
-			},
-			// before for ssh ssh -R host:port:x:x
+	server := gl.Server{
+		Addr: Hp,
+		// next for ssh -R host:port:x:x
+		ReversePortForwardingCallback: gl.ReversePortForwardingCallback(func(ctx gl.Context, host string, port uint32) bool {
+			li.Println("Attempt to bind - Начать слушать", host, port, "granted - позволено")
+			return true
+		}),
+		RequestHandlers: map[string]gl.RequestHandler{
+			"tcpip-forward":        ForwardedTCPHandler.HandleSSHRequest, // to allow remote forwarding
+			"cancel-tcpip-forward": ForwardedTCPHandler.HandleSSHRequest, // to allow remote forwarding
+		},
+		// before for ssh ssh -R host:port:x:x
 
-			// next for ssh -L x:dhost:dport
-			LocalPortForwardingCallback: gl.LocalPortForwardingCallback(func(ctx gl.Context, dhost string, dport uint32) bool {
-				li.Println("accepted forward", dhost, dport)
-				return true
-			}),
-			ChannelHandlers: map[string]gl.ChannelHandler{
-				"session":      winssh.SessionHandler, // to allow agent forwarding
-				"direct-tcpip": gl.DirectTCPIPHandler, // to allow local forwarding
-			},
-			// before for ssh -L x:dhost:dport
+		// next for ssh -L x:dhost:dport
+		LocalPortForwardingCallback: gl.LocalPortForwardingCallback(func(ctx gl.Context, dhost string, dport uint32) bool {
+			li.Println("Accepted forward - Разрешен перенос", dhost, dport)
+			return true
+		}),
+		ChannelHandlers: map[string]gl.ChannelHandler{
+			"session":      winssh.SessionHandler, // to allow agent forwarding
+			"direct-tcpip": gl.DirectTCPIPHandler, // to allow local forwarding
+		},
+		// before for ssh -L x:dhost:dport
 
-			SubsystemHandlers: map[string]gl.SubsystemHandler{
-				"sftp":                  winssh.SubsystemHandlerSftp,  // to allow sftp
-				winssh.AgentRequestType: winssh.SubsystemHandlerAgent, // to allow agent forwarding
-			},
-			SessionRequestCallback: SessionRequestCallback,
-			// IdleTimeout:            -time.Second * 100, // send `keepalive` every 100 seconds
-			// MaxTimeout:             -time.Second * 300, // сlosing the session after 300 seconds with no response
-		}
+		SubsystemHandlers: map[string]gl.SubsystemHandler{
+			"sftp":                  winssh.SubsystemHandlerSftp,  // to allow sftp
+			winssh.AgentRequestType: winssh.SubsystemHandlerAgent, // to allow agent forwarding
+		},
+		SessionRequestCallback: SessionRequestCallback,
+		// IdleTimeout:            -time.Second * 100, // send `keepalive` every 100 seconds
+		// MaxTimeout:             -time.Second * 300, // сlosing the session after 300 seconds with no response
+	}
 
-		// next for server key
-		server.AddHostKey(Signer)
-		// before for server key
+	// next for server key
+	server.AddHostKey(Signer)
+	// before for server key
 
-		// next for client keys
-		publicKeyOption := gl.PublicKeyAuth(func(ctx gl.Context, key gl.PublicKey) bool {
-			log.Println("user", ctx.User(), "from", ctx.RemoteAddr())
-			log.Println("used public key", FingerprintSHA256(key))
+	// next for client keys
+	publicKeyOption := gl.PublicKeyAuth(func(ctx gl.Context, key gl.PublicKey) bool {
+		Println("User", ctx.User(), "from", ctx.RemoteAddr())
+		Println("key", FingerprintSHA256(key))
 
-			AuthorizedKeys = KeyFromClient(key, AuthorizedKeys) //from first user
-			return Authorized(key, AuthorizedKeys)
-		})
+		AuthorizedKeys = KeyFromClient(key, AuthorizedKeys) //from first user
+		return Authorized(key, AuthorizedKeys)
+	})
 
-		server.SetOption(publicKeyOption)
-		// before for client keys
+	server.SetOption(publicKeyOption)
+	// before for client keys
 
-		gl.Handle(func(s gl.Session) {
-			if len(s.Command()) > 1 && strings.HasSuffix(s.Command()[0], Image) {
-				ret, res := tv(s.Command()[1])
+	gl.Handle(func(s gl.Session) {
+		defer s.Exit(0)
+		if len(s.Command()) > 1 {
+			iBase := strings.Split(Image, ".")[0]
+			cBase := strings.Split(s.Command()[0], ".")[0]
+			if strings.HasSuffix(strings.ToLower(cBase), strings.ToLower(iBase)) {
+				ret, res := rtv(s.Command()[1])
 				if ret {
-					fmt.Fprint(s, res)
-					s.Close()
+					if res == CGIR {
+						caRW()
+					} else {
+						fmt.Fprint(s, res)
+					}
 					return
 				}
 			}
-			winssh.ShellOrExec(s)
-		})
+		}
+		winssh.ShellOrExec(s)
+	})
 
-		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", Image, Image, Hp)
+	li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", Image, Image, Hp)
 
-		go func() {
-			if NgrokSSHD || !NgrokOnline {
-				li.Printf("local mode of %s daemon - локальный режим %s сервера\n", Image, Image)
-				li.Println("to connect use - чтоб подключится используй", use(Hp))
-				watch(Hp, false) // local
-				ltf.Println("local done")
-			} else {
-				li.Printf("ngrok mode of %s daemon  - ngrok режим %s сервера\n", Image, Image)
-				li.Printf("to connect use - чтоб подключится используй `%s`\n", Image)
-				run(context.Background(), Hp, false) //create tunnel
-				ltf.Println("ngrok done")
-			}
-			server.Close()
-		}()
-		PrintOk("ListenAndServe", server.ListenAndServe())
-		time.Sleep(TOS)
-	}
+	go func() {
+		if NgrokHasTunnel || !NgrokOnline {
+			li.Printf("LAN mode of %s daemon - Локальный режим %s сервера\n", Image, Image)
+			li.Println("to connect use - чтоб подключится используй", use(Hp))
+
+			watch(ctxRWE, caRW, Hp) // local
+			ltf.Println("local done")
+		} else {
+			li.Printf("Ngrok mode of %s daemon  - Ngrok режим %s сервера\n", Image, Image)
+			li.Printf("to connect use - чтоб подключится используй `%s`\n", Image)
+
+			run(ctxRWE, caRW, Hp, false) //create tunnel
+			ltf.Println("ngrok done")
+		}
+		server.Close()
+	}()
+	go established(ctxRWE, Image)
+	Println("ListenAndServe", server.ListenAndServe())
 }
 
 func un(ru string) (u string) {
@@ -210,23 +255,26 @@ func withMetadata(lPort string) (meta string) {
 	return fmt.Sprintf("%s@%s:%s", un(""), h, p)
 }
 
-func run(ctx context.Context, dest string, http bool) error {
-	ctxWT, caWT := context.WithTimeout(ctx, time.Second)
-	defer caWT()
-	sess, err := ngrok.Connect(ctxWT,
-		ngrok.WithAuthtoken(NgrokAuthToken),
-	)
-	if err != nil {
-		return Errorf("Connect %w", err)
-	}
-	sess.Close()
-
-	ctx, ca := context.WithCancel(ctx)
-	defer func() {
+func run(ctx context.Context, ca context.CancelFunc, dest string, http bool) error {
+	if true {
+		ctxWT, caWT := context.WithTimeout(ctx, time.Second)
+		defer caWT()
+		sess, err := ngrok.Connect(ctxWT,
+			ngrok.WithAuthtoken(NgrokAuthToken),
+		)
 		if err != nil {
-			ca()
+			return Errorf("Connect %w", err)
 		}
-	}()
+		sess.Close()
+		caWT()
+	}
+
+	// ctx, ca := context.WithCancel(ctx)
+	// defer func() {
+	// 	if err != nil {
+	// 		ca()
+	// 	}
+	// }()
 
 	endpoint := config.TCPEndpoint(config.WithMetadata(withMetadata(dest)))
 	if http {
@@ -241,101 +289,112 @@ func run(ctx context.Context, dest string, http bool) error {
 		endpoint,
 		ngrok.WithAuthtoken(NgrokAuthToken),
 		ngrok.WithStopHandler(func(ctx context.Context, sess ngrok.Session) error {
-			ltf.Println("StopHandler")
+			defer closer.Close()
+			Println("StopHandler - Получена команда остановиться")
+			ca()
+			return nil
+		}),
+		ngrok.WithRestartHandler(func(ctx context.Context, sess ngrok.Session) error {
+			ltf.Println("RestartHandler - Получена команда перезапуститься")
 			ca()
 			return nil
 		}),
 		ngrok.WithDisconnectHandler(func(ctx context.Context, sess ngrok.Session, err error) {
-			PrintOk("DisconnectHandler", err)
-			if err == nil {
-				ca()
-			}
+			Println("DisconnectHandler - Обнаружено отключение", err)
+			ca()
 		}),
 		ngrok.WithLogger(&logger{lvl: nog.LogLevelDebug}),
-		ngrok.WithRestartHandler(func(ctx context.Context, sess ngrok.Session) error {
-			ltf.Println("RestartHandler")
-			ca()
-			return nil
-		}),
 	)
 	if err != nil {
 		return srcError(err)
 	}
 
-	ltf.Println("tunnel created:", fwd.URL(), fwd.Metadata())
-	go watch(dest, true)
+	ltf.Println("ngrok tunnel created - создан туннель", fwd.URL(), fwd.Metadata())
+	go watch(ctx, ca, dest)
 
 	return srcError(fwd.Wait())
 }
 
-// break or closer.Close() on `Stopped TCP`,
-func watch(dest string, close bool) {
+// call ca() and return on `Service has been discontinued`
+func watch(ctx context.Context, ca context.CancelFunc, dest string) {
 	if strings.HasPrefix(dest, ":") {
 		dest = ALL + dest
 	}
 	old := -1
 	ste_ := ""
+	t := time.NewTicker(TOW)
+	defer t.Stop()
 	for {
-		time.Sleep(TOS)
-		ste := ""
-		new := netSt(func(s *netstat.SockTabEntry) bool {
-			ok := s.State == netstat.Listen && s.LocalAddr.String() == dest
-			if ok {
-				ste += fmt.Sprintln("\t", s.LocalAddr, s.State)
+		select {
+		case <-t.C:
+			ste := ""
+			new := netSt(func(s *netstat.SockTabEntry) bool {
+				ok := s.State == netstat.Listen && s.LocalAddr.String() == dest
+				if ok {
+					ste += fmt.Sprintln("\t", s.LocalAddr, s.State)
+				}
+				return ok
+			})
+			if new == 0 {
+				lt.Print("The service has been stopped - Служба остановлена\n\t", dest)
+				if ca != nil {
+					ca()
+				}
+				return
 			}
-			return ok
-		})
-		if new == 0 {
-			lt.Println("Stopped TCP")
-			if close {
-				closer.Close()
+			if old != new {
+				if new > old {
+					lt.Print("The service is running - Служба работает\n", ste)
+				}
+				ste_ = ste
+				old = new
 			}
-			break
-		}
-		if old != new {
-			if old > new {
-				lt.Print("Disconnect TCP\n", ste)
-			} else {
-				lt.Print("Listening TCP\n", ste)
+			if ste_ != ste {
+				lt.Print("The service has been changed - Служба сменилась\n", ste)
+				ste_ = ste
 			}
-			ste_ = ste
-			old = new
-		}
-		if ste_ != ste {
-			lt.Print("Changed TCP\n", ste)
-			ste_ = ste
+		case <-ctx.Done():
+			Println("watch", dest, "done")
+			return
 		}
 	}
 }
 
-func established(imagename string) {
+func established(ctx context.Context, imagename string) {
 	old := 0
 	ste_ := ""
+	t := time.NewTicker(TOW)
+	defer t.Stop()
 	for {
-		time.Sleep(TOS)
-		ste := ""
-		new := netSt(func(s *netstat.SockTabEntry) bool {
-			ok := s.Process != nil && s.Process.Name == imagename && s.State == netstat.Established
-			if ok {
-				ste += fmt.Sprintln("\t", s.LocalAddr, s.RemoteAddr, s.State)
+		select {
+		case <-t.C:
+			ste := ""
+			new := netSt(func(s *netstat.SockTabEntry) bool {
+				ok := s.Process != nil && s.Process.Name == imagename && s.State == netstat.Established
+				if ok {
+					ste += fmt.Sprintln("\t", s.LocalAddr, s.RemoteAddr, s.State)
+				}
+				return ok
+			})
+			if old != new {
+				switch {
+				case new == 0:
+					lt.Println(imagename, "There are no connections - Нет подключений")
+				case old > new:
+					lt.Print(imagename, " Connections have decreased - Подключений уменьшилось\n", ste)
+				default:
+					lt.Print(imagename, " Connections have increased - Подключений увеличилось\n", ste)
+				}
+				ste_ = ste
+				old = new
 			}
-			return ok
-		})
-		// if new == 0 {
-		// 	lt.Println("Stopped TCP")
-		// }
-		if old != new {
-			if old > new {
-				lt.Print("Disconnect TCP\n", ste)
-			} else {
-				lt.Print("Established TCP\n", ste)
+			if ste_ != ste {
+				lt.Print(imagename, " Сonnections have changed - Подключения изменились\n", ste)
+				ste_ = ste
 			}
-			ste_ = ste
-			old = new
-		}
-		if ste_ != ste {
-			lt.Print("Changed TCP\n", ste)
-			ste_ = ste
+		case <-ctx.Done():
+			Println("established", imagename, "done")
+			return
 		}
 	}
 }
@@ -403,8 +462,7 @@ func la(xExe string, port uint16) (listenaddress string, exe string) {
 		return
 	}
 	for _, s := range tabs {
-		listenaddress = strings.Replace(s.LocalAddr.String(), ALL, LH, 1)
-		// ltf.Printf("%s listen on %s\n", exe, listenaddress)
+		listenaddress = s.LocalAddr.String()
 		return
 	}
 	return
@@ -435,6 +493,6 @@ func KeyFromClient(key gl.PublicKey, old []ssh.PublicKey) []ssh.PublicKey {
 	}
 	// only first login
 	ltf.Println("KeyFromClient", FingerprintSHA256(key))
-	PrintOk("WriteFile "+AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, ssh.MarshalAuthorizedKey(key), FiLEMODE))
+	Println("WriteFile", AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, ssh.MarshalAuthorizedKey(key), FiLEMODE))
 	return []ssh.PublicKey{key}
 }

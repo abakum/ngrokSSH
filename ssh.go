@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	_ "embed"
 
@@ -22,7 +21,6 @@ import (
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/sys/windows/registry"
 )
 
 const (
@@ -36,51 +34,50 @@ func client(user, host, port, listenAddress string) {
 		AB       = "AB"
 	)
 	var (
-		sock        net.Conn
-		signers     []ssh.Signer
-		session     *ssh.Session
+		sock    net.Conn
+		signers []ssh.Signer
+		// session     *ssh.Session
 		menuVoption []string
 		menuVid     = 0
+		err         error
 	)
+	// Fatal(fmt.Errorf("123"))
 	title := fmt.Sprintf("%s@%s:%s", user, host, port)
 
 	VisitAll(title)
 
-	sock, Err = NewConn()
-	if Err != nil {
-		Err = srcError(Err)
-		return
-	}
+	sock, err = NewConn()
+	Fatal(err)
 	defer sock.Close()
 
-	var b bytes.Buffer
 	con := &sshlib.Connect{
 		ForwardAgent: A,
 		Agent:        agent.NewClient(sock),
-		Stdout:       &b,
 	}
 
-	signers, Err = sshlib.CreateSignerAgent(con.Agent)
-	if Err != nil || len(signers) == 0 {
-		Err = srcError(Err)
+	signers, err = sshlib.CreateSignerAgent(con.Agent)
+	Fatal(err)
+	FatalOr("len(signers) < 1", len(signers) < 1)
+
+	Fatal(con.CreateClient(host, port, user, []ssh.AuthMethod{ssh.PublicKeys(signers...)}))
+
+	if Command != "" {
+		con.Command(Command)
+		if err != nil {
+			letf.Println(err)
+		}
 		return
 	}
 
-	Err = con.CreateClient(host, port, user, []ssh.AuthMethod{ssh.PublicKeys(signers...)})
-	if Err != nil {
-		Err = srcError(Err)
-		return
-	}
+	// var bb bytes.Buffer
+	// con.Stdout = &bb
 
 	// Create Session
-	session, Err = con.CreateSession()
-	if Err != nil {
-		Err = srcError(Err)
-		return
-	}
+	// session, err = con.CreateSession()
+	// Fatal(err)
 
 	for _, o := range V {
-		hphp, e := cgi(con, Image+" "+CGIV, o, RFB, &b)
+		hphp, e := cgi(con, Image+" "+CGIV, o, RFB)
 		if e != nil {
 			continue
 		}
@@ -88,16 +85,25 @@ func client(user, host, port, listenAddress string) {
 	}
 
 	if actual(flag.CommandLine, "S") || len(menuVoption) > 0 {
-		i5, er := strconv.Atoi(S)
-		if er == nil && !isListen("", i5, 0) {
+		i5, err := strconv.Atoi(S)
+		if err == nil && !isListen("", i5, 0) {
 			L = append(L, S)
 			// gosysproxy.SetGlobalProxy("socks=" + net.JoinHostPort(LH, S))
-			// setX("all_proxy", "socks://"+net.JoinHostPort(LH, S))
-			proxy.RealSet("socks", net.JoinHostPort(LH, S))
+			if X {
+				setX("all_proxy", "socks://"+net.JoinHostPort(LH, S))
+				Println("setX", "all_proxy", "socks://"+net.JoinHostPort(LH, S))
+			}
+			ProxyType, ProxyServer := "socks", net.JoinHostPort(LH, S)
+			proxy.RealSet(ProxyType, ProxyServer)
+			Println("RealSet", ProxyType, ProxyServer)
 			closer.Bind(func() {
 				// gosysproxy.Off()
-				// setX("all_proxy", "")
+				if X {
+					setX("all_proxy", "")
+					Println("setX", "all_proxy", "")
+				}
 				proxy.RealSet("", "")
+				Println("RealSet", "", "")
 			})
 		}
 	}
@@ -114,7 +120,7 @@ func client(user, host, port, listenAddress string) {
 		letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
 	} else {
 		for _, o := range T {
-			hphp, e := cgi(con, Image+" "+CGIT, o, RFC2217, &b)
+			hphp, e := cgi(con, Image+" "+CGIT, o, RFC2217)
 			if e != nil {
 				continue
 			}
@@ -122,15 +128,22 @@ func client(user, host, port, listenAddress string) {
 		}
 	}
 
-	ska(con, session, false)
+	// ska(con, session)
+	o := 0
+	if a {
+		o++
+	}
+	if OpenSSH != "" {
+		o++
+	}
 	switch {
-	case actual(flag.CommandLine, "T"):
-		menuVid = len(menuVoption) + 1
+	case actual(flag.CommandLine, "T") || actual(flag.CommandLine, "b"):
+		menuVid = len(menuVoption) + 1 + o
 		if len(MenuToption) == 1 {
 			tty(parseHPHP(MenuToption[0], RFC2217)...)
 		}
 	case actual(flag.CommandLine, "V"):
-		menuVid = 1
+		menuVid = 1 + o
 		opts := []string{GEOMETRY}
 		if psCount(REALVAB, "", 0) == 0 {
 			opts = append(opts,
@@ -140,23 +153,42 @@ func client(user, host, port, listenAddress string) {
 			)
 		}
 		vab := exec.Command(Fns[REALVAB], opts...)
-		PrintOk(cmd("Start", vab), vab.Start())
+		Println(cmd("Start", vab), vab.Start())
 		if len(menuVoption) == 1 {
 			mV(menuVoption[0])
 		}
 	default:
-		mO(title, user, host, port)
+		if a {
+			menuVid++
+		}
+		if O {
+			menuVid++
+		}
 	}
+	hostkey := ""
+	if len(KnownKeys) > 0 {
+		hostkey = "-hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
+	}
+	m0 := fmt.Sprintf("%s %s %s", Fns[KITTY], title, hostkey)
+	m1 := fmt.Sprintf("%s %s", Exe, title)
+	mo := fmt.Sprintf(`%s -l %s %s -p %s -o "UserKnownHostsFile=%s"`, OpenSSH, user, host, port, KnownHosts)
 	for {
+		fmt.Println()
+		// wmenu.Clear()
+
 		menuV := wmenu.NewMenu(MENU)
 		menuV.Action(func(opts []wmenu.Opt) error {
 			for _, opt := range opts {
 				menuVid = opt.ID
 				switch {
-				case menuVid == 0:
-					mO(title, user, host, port)
+				case menuVid < 1+o:
+					if a && menuVid == 1 {
+						mPS(con)
+					} else {
+						mO(title, user, host, port, menuVid > 0)
+					}
 					return nil
-				case menuVid > len(menuVoption):
+				case menuVid > len(menuVoption)+o:
 					tty(parseHPHP(opt.Text, RFC2217)...)
 					return nil
 				default:
@@ -166,14 +198,30 @@ func client(user, host, port, listenAddress string) {
 			}
 			return nil
 		})
-		menuV.Option(title, nil, menuVid == 0, nil)
+		menuV.Option(m0, nil, menuVid == 0, nil)
+		if a {
+			menuV.Option(m1, nil, menuVid == 1, nil)
+		}
+		if OpenSSH != "" {
+			menuV.Option(mo, nil, menuVid == o, nil)
+		}
 		for i, opt := range append(menuVoption, MenuToption...) {
-			menuV.Option(opt, nil, menuVid == i+1, nil)
+			menuV.Option(opt, nil, menuVid == i+1+o, nil)
 		}
 		if menuV.Run() != nil {
 			return
 		}
 	}
+}
+func mPS(con *sshlib.Connect) {
+	seSh, err := con.CreateSession()
+	if err != nil {
+		letf.Println(err)
+		return
+	}
+	defer seSh.Close()
+	con.Shell(seSh)
+	// PrintOk("Shell", Shell(con, seSh))
 }
 
 func mV(opt string) {
@@ -190,11 +238,11 @@ func mV(opt string) {
 		"-ProxyServer=",
 	}
 	hphp := parseHPHP(opt, RFB)
-	vv := exec.Command(Fns[REALVV], append(vvO, net.JoinHostPort(hphp[0], hphp[1]))...)
-	PrintOk(cmd("Start", vv), vv.Start())
+	vv := exec.Command(RealVV, append(vvO, net.JoinHostPort(hphp[0], hphp[1]))...)
+	Println(cmd("Start", vv), vv.Start())
 }
 
-func mO(title, user, host, port string) {
+func mO(title, user, host, port string, O bool) {
 	opts := []string{
 		title,
 		"-title",
@@ -225,13 +273,13 @@ func mO(title, user, host, port string) {
 	}
 	ki := exec.Command(sshExe, opts...)
 	if O {
+		ltf.Println(cmd("Run", ki))
 		ki.Stdout = os.Stdout
 		ki.Stderr = os.Stdout
 		ki.Stdin = os.Stdin
-		li.Println(cmd("Run", ki))
 		ki.Run()
 	} else {
-		PrintOk(cmd("Start", ki), ki.Start())
+		Println(cmd("Start", ki), ki.Start())
 	}
 }
 
@@ -253,12 +301,14 @@ func fromNgrok(publicURL, meta string) (user, host, port, listenAddress string) 
 			if listenAddress == "" {
 				listenAddress = net.JoinHostPort(ip, p)
 			}
-			ltf.Println("try local")
-			if sshTry(u, ip, p) == nil {
+			if Println("Try connect over - Подключаемся через LAN", sshTry(u, ip, p)) {
 				user, host, port = u, ip, p
 				return
 			}
 		}
+	}
+	if n {
+		return
 	}
 	tcp, err := url.Parse(publicURL)
 	if err != nil {
@@ -266,64 +316,18 @@ func fromNgrok(publicURL, meta string) (user, host, port, listenAddress string) 
 	}
 	h := tcp.Hostname()
 	p = tcp.Port()
-	ltf.Println("try over ngrok")
-	if sshTry(u, h, p) == nil {
+	if Println("Try connect over - Подключаемся через ngrok", sshTry(u, h, p)) {
 		user, host, port = u, h, p
 	}
 	return
 }
 
-func ska(con *sshlib.Connect, session *ssh.Session, noGo bool) {
+func ska(con *sshlib.Connect, session *ssh.Session) {
 	if isListen("", 0, os.Getpid()) {
 		con.SendKeepAliveInterval = 100
 		con.SendKeepAliveMax = 3
-		if noGo {
-			con.SendKeepAlive(session)
-			return
-		}
 		go con.SendKeepAlive(session)
 	}
-}
-
-func setX(key, val string) {
-	set := exec.Command("setx", key, val)
-	// set.Stdout = os.Stdout
-	PrintOk(cmd("Run", set), srcError(set.Run()))
-}
-
-func GetPath(key, val string) {
-	set := exec.Command("setx", key, val)
-	// set.Stdout = os.Stdout
-	PrintOk(cmd("Run", set), srcError(set.Run()))
-}
-
-func SetExpandStringValues(k registry.Key, path string, mnv map[string]string) {
-	key, err := registry.OpenKey(k, path, registry.SET_VALUE)
-	if err != nil {
-		return
-	}
-	defer key.Close()
-	for name, val := range mnv {
-		key.SetExpandStringValue(name, val)
-	}
-}
-
-func GetStringValues(k registry.Key, path string, names ...string) (vals []string) {
-	vals = make([]string, len(names))
-	key, err := registry.OpenKey(k, path, registry.QUERY_VALUE)
-	if err != nil {
-		return
-	}
-	defer key.Close()
-	for i, name := range names {
-		vals[i], _, _ = key.GetStringValue(name)
-	}
-	return
-}
-
-func getProxy() (ProxyType, ProxyServer string) {
-	vals := GetStringValues(registry.CURRENT_USER, `SOFTWARE\RealVNC\vncviewer`, "ProxyType", "ProxyServer")
-	return vals[0], vals[1]
 }
 
 func sshTry(u, h, p string) (err error) {
@@ -431,7 +435,7 @@ func tryBindL(con *sshlib.Connect, hp ...string) (hphp []string, err error) {
 		for i := 0; i < 10; i++ {
 			hphp[1] = strconv.Itoa(p)
 			err = con.TCPLocalForward(net.JoinHostPort(hphp[0], hphp[1]), net.JoinHostPort(hphp[2], hphp[3]))
-			PrintOk(fmt.Sprintf("%s -L %s", Image, strings.Join(hphp, ":")), err)
+			Println(Image, "-L", strings.Join(hphp, ":"), err)
 			if err == nil {
 				return
 			}
@@ -440,7 +444,8 @@ func tryBindL(con *sshlib.Connect, hp ...string) (hphp []string, err error) {
 		return
 	}
 	go func() {
-		PrintOk(fmt.Sprintf("%s -D %s:%s", Image, hphp[0], hphp[1]), con.TCPDynamicForward(hphp[0], hphp[1]))
+		ltf.Printf("%s -D %s:%s\n", Image, hphp[0], hphp[1])
+		con.TCPDynamicForward(hphp[0], hphp[1])
 	}()
 	return
 }
@@ -462,7 +467,7 @@ func tryBindR(con *sshlib.Connect, hp ...string) (hphp []string, err error) {
 		for i := 0; i < 10; i++ {
 			hphp[1] = strconv.Itoa(p)
 			err = con.TCPRemoteForward(net.JoinHostPort(hphp[0], hphp[1]), net.JoinHostPort(hphp[2], hphp[3]))
-			PrintOk(fmt.Sprintf("%s -R %s", Image, strings.Join(hphp, ":")), err)
+			Println(Image, "-R", strings.Join(hphp, ":"), err)
 			if err == nil {
 				return
 			}
@@ -471,12 +476,13 @@ func tryBindR(con *sshlib.Connect, hp ...string) (hphp []string, err error) {
 		return
 	}
 	go func() {
-		PrintOk(fmt.Sprintf("%s -R %s:%s", Image, hphp[0], hphp[1]), con.TCPReverseDynamicForward(hphp[0], hphp[1]))
+		ltf.Printf("%s -R %s:%s\n", Image, hphp[0], hphp[1])
+		con.TCPReverseDynamicForward(hphp[0], hphp[1])
 	}()
 	return
 }
 
-func cgi(con *sshlib.Connect, cc, opt string, port int, b *bytes.Buffer) (hphp []string, err error) {
+func cgi(con *sshlib.Connect, cc, opt string, port int) (hphp []string, err error) {
 	hphp = parseHPHP(opt, port)
 	err = fmt.Errorf("empty")
 	if con == nil || cc == "" {
@@ -486,12 +492,36 @@ func cgi(con *sshlib.Connect, cc, opt string, port int, b *bytes.Buffer) (hphp [
 		// L = append(L, strings.Join(hphp, ":"))
 		return tryBindL(con, hphp...)
 	}
-	con.Command(cc)
-	time.Sleep(time.Second)
-	h, p, err := net.SplitHostPort(b.String())
-	b.Reset()
+	var o bytes.Buffer
+	if false {
+		var i bytes.Buffer
+		con.Stdin = &i
+		con.Stdout = &o
+		err = con.Command(cc)
+		con.Stdout = nil
+		con.Stdin = nil
+	} else {
+		con.Session, err = con.CreateSession()
+		if err != nil {
+			return
+		}
+		defer func() {
+			con.Session.Close()
+			con.Session = nil
+		}()
+		con.Session.Stdout = &o
+		err = con.Session.Run(cc)
+		if err != nil {
+			return
+		}
+	}
+	Println(o.String(), err)
+	h, p, err := net.SplitHostPort(o.String())
 	if err != nil {
 		return
+	}
+	if h == ALL {
+		h = LH
 	}
 	return tryBindL(con, append(hphp, h, p)...)
 }
@@ -544,7 +574,7 @@ func VisitAll(uhp string) {
 			o += fmt.Sprintf("%s%s=%s ", minus, f.Name, f.Value)
 		}
 	})
-	ltf.Printf("%s %s%s \n", Image, o, strings.TrimSuffix(uhp, ":"+PORT))
+	ltf.Printf("%s %s%s %s\n", Image, o, strings.TrimSuffix(uhp, ":"+PORT), Command)
 }
 
 type fixedHostKeys struct {
@@ -572,4 +602,71 @@ func (f *fixedHostKeys) check(hostname string, remote net.Addr, key ssh.PublicKe
 func FixedHostKeys(keys ...ssh.PublicKey) ssh.HostKeyCallback {
 	hk := &fixedHostKeys{keys}
 	return hk.check
+}
+
+func setX(key, val string) {
+	set := exec.Command("setx", key, val)
+	Println(cmd("Run", set), set.Run())
+}
+
+func setupShell(c *sshlib.Connect, session *ssh.Session) (err error) {
+	// set FD
+	stdin := sshlib.GetStdin()
+	session.Stdin = stdin
+	// session.Stdin = os.StdInput
+	session.Stdout = os.Stdout
+	session.Stderr = os.Stderr
+
+	// Request tty
+	err = sshlib.RequestTty(session)
+	if err != nil {
+		return err
+	}
+
+	// x11 forwarding
+	if c.ForwardX11 {
+		err = c.X11Forward(session)
+		if err != nil {
+			letf.Println(err)
+		}
+	}
+	err = nil
+
+	// ssh agent forwarding
+	if c.ForwardAgent {
+		c.ForwardSshAgent(session)
+	}
+
+	return
+}
+
+// Shell connect login shell over ssh.
+func Shell(c *sshlib.Connect, session *ssh.Session) (err error) {
+	// Input terminal Make raw
+	// fd := int(os.Stdin.Fd())
+	// terminal.GetState(fd)
+	// state, err := terminal.MakeRaw(fd)
+	// if err != nil {
+	// 	return
+	// }
+	// defer terminal.Restore(fd, state)
+
+	// setup
+	err = setupShell(c, session)
+	if err != nil {
+		return
+	}
+
+	// Start shell
+	err = session.Shell()
+	if err != nil {
+		return
+	}
+
+	// keep alive packet
+	go c.SendKeepAlive(session)
+
+	err = session.Wait()
+
+	return
 }

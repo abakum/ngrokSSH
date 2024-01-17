@@ -5,11 +5,12 @@ go 1.21.4
 replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 v1.2.6
 
 require (
+	github.com/Desuuuu/windrive v0.2.2
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
-	github.com/abakum/proxy v0.0.4-lw
-	github.com/abakum/winssh v0.0.0-20240106151552-cbc081de6de8
+	github.com/abakum/proxy v0.0.6-lw
+	github.com/abakum/winssh v0.0.0-20240117134710-c1b722d897d3
 	github.com/blacknon/go-sshlib v0.1.10
 	github.com/dixonwille/wmenu/v5 v5.1.0
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
@@ -19,8 +20,7 @@ require (
 	github.com/xlab/closer v1.1.0
 	go.bug.st/serial v1.6.1
 	golang.ngrok.com/ngrok v1.7.0
-	golang.org/x/crypto v0.17.0
-	golang.org/x/sys v0.16.0
+	golang.org/x/crypto v0.18.0
 	gopkg.in/ini.v1 v1.67.0
 )
 
@@ -54,9 +54,10 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.ngrok.com/muxado/v2 v2.0.0 // indirect
 	golang.org/x/mod v0.14.0 // indirect
-	golang.org/x/net v0.19.0 // indirect
+	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/term v0.16.0 // indirect
-	golang.org/x/tools v0.16.1 // indirect
+	golang.org/x/tools v0.17.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

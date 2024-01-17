@@ -62,19 +62,13 @@ func tty(hphp ...string) {
 	var bBuffer bytes.Buffer
 	Hub.Stdout = &bBuffer
 	Hub.Stderr = &bBuffer
-	PrintOk(cmd("Start", Hub), Hub.Start())
-	// go func() {
-	// 	li.Println(cmd("Run", Hub))
-	// 	PrintOk(cmd("Close", Hub), Hub.Run())
-	// }()
+	Println(cmd("Start", Hub), Hub.Start())
+
 	defer kill()
 	for i := 0; i < 24; i++ {
 		s, er := bBuffer.ReadString('\n')
 		if er == nil {
-			if strings.Contains(s, "ERROR") {
-				Err = Errorf(s)
-				return
-			}
+			FatalOr(s, strings.Contains(s, "ERROR"))
 			fmt.Print(s)
 			if s == "TCP(1): Connected\n" {
 				break
@@ -95,12 +89,11 @@ func tty(hphp ...string) {
 				"-serial",
 				"COM" + So,
 			}
-			PrintOk("cmdFromClipBoard", command())
+			Println("cmdFromClipBoard", command())
 			ki := exec.Command(Fns[KITTY], opts...)
 
-			li.Println(cmd("Run", ki))
-			Err = srcError(ki.Run())
-			PrintOk(cmd("Close", ki), Err)
+			ltf.Println(cmd("Run", ki))
+			Println(cmd("Close", ki), ki.Run())
 		}
 		menu := wmenu.NewMenu("Choose baud and seconds delay for Ctrl-F2 or commands from clipboard case delay>" + DELAY +
 			"\nВыбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера обмена если задержка>" + DELAY)
@@ -142,7 +135,7 @@ func tty(hphp ...string) {
 
 func kill() {
 	if Hub.Process != nil {
-		PrintOk(cmd("Kill", Hub), Hub.Process.Kill())
+		Println(cmd("Kill", Hub), Hub.Process.Kill())
 		// time.Sleep(time.Second)
 	}
 }

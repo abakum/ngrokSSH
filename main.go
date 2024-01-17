@@ -1,16 +1,19 @@
 /*
 git clone https://github.com/abakum/ngrokSSH
-go mod init github.com/abakum/ngrokSSH
-go get github.com/abakum/go-console
-go get github.com/abakum/winssh
+go mod init github.com/abakum/ngrokSSH@latest
+go get github.com/abakum/go-console@latest
+go get github.com/abakum/winssh@latest
+go get github.com/abakum/go-netstat@latest
+go get github.com/abakum/proxy@latest
 
 go get github.com/gliderlabs/ssh
 go get github.com/pkg/sftp
-go get golang.ngrok.com/ngrok
+go get golang.ngrok.com/ngrok@latest
 go get github.com/ngrok/ngrok-api-go/v5
-go get github.com/abakum/go-netstat
 go get github.com/mitchellh/go-ps
 go get github.com/blacknon/go-sshlib
+go get github.com/Desuuuu/windrive
+go get github.com/jimschubert/stripansi
 
 go mod tidy
 */
@@ -19,6 +22,7 @@ package main
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -27,10 +31,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/Desuuuu/windrive"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
 	"github.com/dixonwille/wmenu/v5"
@@ -55,15 +63,21 @@ const (
 	XO              = "on"
 	DELAY           = "0.05"
 	HUB4COM         = "hub4com.exe"
+	SSHD            = "sshd.exe"
 	KITTY           = "kitty_portable.exe"
 	REALVV          = "vncviewer.exe"
 	CGIV            = "-v"
 	CGIT            = "-t"
+	CGIR            = "-r"
 	MENU            = "Choose target for console - выбери цель подключения консоли"
 	FiLEMODE        = 0644
 	DIRMODE         = 0755
 	KNOWN_HOSTS     = "known_hosts.ini"     //created on first run
 	AUTHORIZED_KEYS = "authorized_keys.ini" //created on first run
+	TOR             = time.Second * 15      //reconnect TO
+	TOW             = time.Second * 5       //watch TO
+	SOCKS5          = "1080"
+	HTTPX           = "3128"
 )
 
 var (
@@ -71,7 +85,7 @@ var (
 	NgrokAuthToken string
 
 	//go:embed NGROK_API_KEY.txt
-	ngrokApiKey string
+	NgrokApiKey string
 
 	//go:embed VERSION
 	Ver string
@@ -93,38 +107,51 @@ var (
 	S,
 	OpenSSH,
 	AuthorizedKeysIni,
-	KnownHosts string
-
-	Err error
+	KnownHosts,
+	Crypt,
+	RealVV,
+	Command,
+	_ string
 
 	NgrokOnline,
-	NgrokSSHD,
+	NgrokHasTunnel,
 	A,
 	N,
 	O,
-	h bool
+	h,
+	X,
+	a,
+	r,
+	t,
+	v,
+	n,
+	_ bool
 
 	L,
 	R,
 	V,
 	T,
 	C,
-	Coms arrayFlags
+	Coms,
+	_ arrayFlags
 
-	Crypt string
-	Hub   *exec.Cmd
-	Fns   map[string]string
+	Hub *exec.Cmd
+	Fns map[string]string
 	MenuToption,
 	Ips []string
 	MenuTid = 0
 	Signer  gl.Signer
 	KnownKeys,
 	AuthorizedKeys []ssh.PublicKey
+	Drives   []*windrive.Drive
+	HardExe  = true // for linux symlink
+	Once     sync.Once
+	pemBytes []byte
+	Bug      = "Ж"
 )
 
 func main() {
 	const (
-		SOCKS5          = "1080"
 		NGROK_AUTHTOKEN = "NGROK_AUTHTOKEN"
 		NGROK_API_KEY   = "NGROK_API_KEY"
 	)
@@ -133,48 +160,73 @@ func main() {
 		sp string
 		err error
 	)
-	// cgi
+	NgrokAuthToken = Getenv(NGROK_AUTHTOKEN, NgrokAuthToken) //create ngrok
+	NgrokApiKey = Getenv(NGROK_API_KEY, NgrokApiKey)         //use ngrok
+
+	Exe, err = os.Executable()
+	a = isAnsi()
+	Fatal(err)
+	Image = filepath.Base(Exe)
+
+	// CGI
 	if len(os.Args) == 2 {
-		ret, res := tv(os.Args[1])
+		ret, res := rtv(os.Args[1])
 		if ret {
+			if res == CGIR {
+				listenaddress, sshdExe := la(SSHD, 22)
+				// Println(listenaddress, sshdExe)
+				if listenaddress != "" {
+					sshd := strings.Split(sshdExe, ".")[0]
+					restart := exec.Command("net.exe",
+						"stop",
+						sshd,
+					)
+					// restart.Stdout = os.Stdout
+					// restart.Stderr = os.Stdout
+					Println(cmd("Run", restart), restart.Run())
+					time.Sleep(TOW + time.Second)
+					restart = exec.Command("net.exe",
+						"start",
+						sshd,
+					)
+					// restart.Stdout = os.Stdout
+					// restart.Stderr = os.Stdout
+					Println(cmd("Run", restart), restart.Run())
+				}
+				Println(ngrokRestart(NgrokApiKey))
+				return
+			}
 			fmt.Print(res)
 			return
 		}
 	}
 
-	Cwd, Err = os.Getwd()
-	if Err != nil {
-		letf.Fatal(Err)
-	}
-	proxy.RealAddrBook(filepath.Join(Cwd, ROOT, REALVV))
+	Cwd, err = os.Getwd()
+	Fatal(err)
+	RealReset()
 
-	Exe, Err = os.Executable()
-	if Err != nil {
-		letf.Fatal(Err)
-	}
-	proxy.RealSet("", "")
-
-	Image = filepath.Base(Exe)
+	RealVV = filepath.Join(Cwd, ROOT, REALVV)
+	proxy.RealAddrBook(RealVV)
 
 	Fns, _ = UnloadEmbedded(Bin, ROOT, Cwd, ROOT, true)
 
 	pri := winssh.GetHostKey(Cwd)
-	pemBytes, Err := os.ReadFile(pri)
-	if Err != nil {
-		Signer, Err = winssh.GenerateSigner(pri)
+	pemBytes, err = os.ReadFile(pri)
+	if err != nil {
+		Signer, err = winssh.GenerateSigner(pri)
 	} else {
-		Signer, Err = ssh.ParsePrivateKey(pemBytes)
+		Signer, err = ssh.ParsePrivateKey(pemBytes)
 	}
-	if Err != nil {
-		letf.Fatal(Err)
-	}
+	Fatal(err)
+
 	pubKey := Signer.PublicKey()
-	li.Println("HostKey", FingerprintSHA256(pubKey))
+	Println("HostKey", FingerprintSHA256(pubKey))
 	rest := append([]byte("* "), ssh.MarshalAuthorizedKey(pubKey)...)
+
 	KnownHosts = filepath.Join(Cwd, ROOT, KNOWN_HOSTS)
 	_, err = os.Stat(KnownHosts)
 	if os.IsNotExist(err) {
-		PrintOk("WriteFile "+KnownHosts, os.WriteFile(KnownHosts, rest, FiLEMODE))
+		Println("WriteFile", KnownHosts, os.WriteFile(KnownHosts, rest, FiLEMODE))
 	}
 
 	AuthorizedKeysIni = filepath.Join(Cwd, ROOT, AUTHORIZED_KEYS)
@@ -183,12 +235,12 @@ func main() {
 	}
 	_, err = os.Stat(AuthorizedKeysIni)
 	if os.IsNotExist(err) && len(AuthorizedKeys) > 0 {
-		PrintOk("WriteFile "+AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, MarshalAuthorizedKeys(AuthorizedKeys...), FiLEMODE))
+		Println("WriteFile", AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, MarshalAuthorizedKeys(AuthorizedKeys...), FiLEMODE))
 	}
 
 	rest, err = os.ReadFile(KnownHosts)
 	if err != nil {
-		letf.Println(err)
+		Println(err)
 	} else {
 		var (
 			hosts  []string
@@ -200,7 +252,7 @@ func main() {
 				break
 			}
 			if len(hosts) > 0 && hosts[0] == "*" {
-				ltf.Println(FingerprintSHA256(pubKey))
+				Println(FingerprintSHA256(pubKey))
 				KnownKeys = append(KnownKeys, pubKey)
 			}
 		}
@@ -213,30 +265,69 @@ func main() {
 
 	flag.Var(&C, "C", fmt.Sprintf("`COM` serial port for daemon - последовательный порт для сервера `hub4com`\nexample - пример `%s -C 7`", Image))
 	flag.Var(&L, "L", fmt.Sprintf("`local` port forwarding as - перенос ближнего порта как `ssh -L [bindHost:]bindPort[:dialHost:dialPort]` or\nlocal socks5 proxy as `ssh -D [bindHost:]bindPort`\nexample - пример `%s -L 80:0.0.0.0:80`", Image))
-	flag.BoolVar(&N, "N", false, fmt.Sprintf("force `ngrok` mode - не пробовать подключаться локально\nexample - пример `%s -N`", Image))
+	flag.BoolVar(&N, "N", false, fmt.Sprintf("force `ngrok` mode - подключаться через туннель\nexample - пример `%s -N` or `%s :`", Image, Image))
 	OpenSSH, err = exec.LookPath("ssh")
 	if err == nil {
 		flag.BoolVar(&O, "O", false, fmt.Sprintf("use ssh from `OpenSSH` - использовать `%s` вместо `%s`\nexample - пример `%s -O`", OpenSSH, Fns[KITTY], Image))
 	} else {
-		ltf.Println("OpenSSH not found")
+		Println("OpenSSH", err)
 	}
 
 	flag.Var(&R, "R", fmt.Sprintf("`remote` port forwarding as - перенос дальнего порта как `ssh -R [bindHost:]bindPort:dialHost:dialPort` or\nremote socks5 proxy  as `ssh -R [bindHost:]bindPort`\nexample - пример `%s -R *:80::80`", Image))
 	flag.StringVar(&S, "S", SOCKS5, fmt.Sprintf("port for proxy - порт для прокси `Socks5`\nexample - пример `%s -S 8080`", Image))
 	flag.Var(&T, "T", fmt.Sprintf("local port forwarding for serial console over - перенос ближнего порта для последовательной консоли через `telnet` RFC2217 like -L\nexample - пример `%s -T 192.168.0.1:7000`", Image))
 	flag.Var(&V, "V", fmt.Sprintf("local port forwarding for - перенос ближнего порта для `VNC` like -L\nexample - пример  `%s -V 5901`", Image))
+	if runtime.GOOS == "windows" {
+		flag.BoolVar(&X, "X", X, fmt.Sprintf("set by - устанавливать с помощью `setX` all_proxy\nexample - пример `%s -X`", Image))
+		Drives, _ = windrive.List()
+		HardExe = HardPath(Drives, Exe)
+	}
 
-	flag.StringVar(&Baud, "b", "", fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 9600`", Image))
+	flag.BoolVar(&a, "a", a, fmt.Sprintf("`ansi` sequence enabled console - консоль поддерживает ansi последовательности\nexample - пример `%s -a` or `%s -a=false`", Image, Image))
+	flag.StringVar(&Baud, "b", "", fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 9600` or `%s -b 9`", Image, Image))
 	flag.BoolVar(&h, "h", h, fmt.Sprintf("show `help` for usage - показать использование параметров\nexample - пример `%s -h`", Image))
 	flag.StringVar(&Ln, "l", "", fmt.Sprintf("`login` name as `ssh -l ln`\nexample - пример `%s -l root 192.168.0.1:2222` or `%s root@192.168.0.1:2222`", Image, Image))
+	flag.BoolVar(&n, "n", false, fmt.Sprintf("do not use `ngrok` for daemon - не использовать ngrok для сервера\nexample - пример `%s -n` or `%s @`", Image, Image))
 	flag.StringVar(&sp, "p", PORT, fmt.Sprintf("ssh `port` as `ssh -p port ln@host` or `sshd -p port`\nexample - пример `%s -p 2222` or `%s -p 2222 root@192.168.0.1`", Image, Image))
-
+	flag.BoolVar(&r, "r", false, fmt.Sprintf("`restart` daemon - перезапустить сервер\nexample - пример `%s -r`", Image))
 	flag.StringVar(&So, "s", So, fmt.Sprintf("`serial` port for console - последовательный порт для консоли\nexample - пример `%s -s 11`", Image))
+	flag.BoolVar(&t, "t", false, fmt.Sprintf("get binding of serial port over `telnet` daemon - где слушает сервер последовательного порта `hub4com`\nexample - пример `%s -t`", Image))
+	flag.BoolVar(&v, "v", false, fmt.Sprintf("get binding of `VNC` daemon - где слушает сервер VNC\nexample - пример `%s -v`", Image))
 	flag.Parse()
+	SetPrefix(a)
+
 	if h {
-		fmt.Printf("Usage of %s version %s:\n", Image, Ver)
+		fmt.Printf("Version %s of `%s params [user@][host[:port]] [command [params]]`\n", Ver, Image)
 		flag.PrintDefaults()
 		return
+	}
+	if actual(flag.CommandLine, "b") {
+		i, err := strconv.Atoi(Baud)
+		if err == nil {
+			switch i {
+			case 1:
+				Baud = "115200"
+			case 2:
+				Baud = "2400"
+			case 3:
+				Baud = "38400"
+			case 4:
+				Baud = "4800"
+			case 5:
+				Baud = "57600"
+			case 9:
+				Baud = "9600"
+			}
+		} else {
+			Println(i, err)
+			Baud = ""
+		}
+	}
+	if !actual(flag.CommandLine, "p") {
+		_, err := strconv.Atoi(sp)
+		if err != nil {
+			sp = PORT
+		}
 	}
 	if !actual(flag.CommandLine, "V") {
 		V.Set("")
@@ -245,52 +336,66 @@ func main() {
 		T.Set("")
 	}
 
-	defer closer.Close()
-	closer.Bind(cleanup)
-
 	if len(C) == 0 {
 		C = Coms[:]
 	}
 	arg := flag.Arg(0)
 	Hp = arg
-	if strings.Contains(arg, "@") {
-		uhp := strings.Split(arg, "@")
-		Ln = uhp[0]
-		if len(uhp) > 1 {
+
+	if strings.Contains(arg, "@") { // a@b:2222
+		uhp := strings.Split(arg, "@") // [a b:2222]
+		Ln = uhp[0]                    // a
+		n = Ln == ""                   // @
+		if len(uhp) > 1 {              // b:2222
 			Hp = uhp[1]
 		}
 	}
 
-	h, p := SplitHostPort(Hp, LH, sp)
-	Hp = net.JoinHostPort(h, p)
-	// li.Fatalln("arg", arg, "Ln", Ln, "Hp", Hp)
-
-	NgrokAuthToken = Getenv(NGROK_AUTHTOKEN, NgrokAuthToken) //create ngrok
-	// NgrokAuthToken += "-"                                       // emulate bad token or no internet
-	// NgrokAuthToken = ""                                         // emulate LAN mode
-	ngrokApiKey = Getenv(NGROK_API_KEY, ngrokApiKey) //use ngrok
-
-	if psCount(Image, "", 0) != 1 {
-		li.Println("another one has been launched - запущен ещё один", Image)
+	// `ngrokSSH -N set` as `ngrokSSH : set`
+	// where Ln@host:port from _,metadata,_:=ngrokGet(NgrokApiKey)
+	// as `ngrokSSH Ln@host:port`
+	if N {
+		Command = strings.Join(flag.Args()[:], " ")
+	} else if len(flag.Args()) > 1 {
+		Command = strings.Join(flag.Args()[1:], " ")
+	}
+	if Hp == ":" { // `ngrokSSH :` as `ngrokSSH -N`
+		N = true
 	}
 
-	// is hub4com running local?
-	if len(T) > 0 && So != "" {
+	h, p := SplitHostPort(Hp, LH, sp)
+	Hp = net.JoinHostPort(h, p)
+
+	defer closer.Close()
+	if Command == "" {
+		closer.Bind(cleanup)
+	}
+
+	if psCount(Image, "", 0) != 1 {
+		li.Println("Another one has been launched - Запущен ещё один", Image)
+	}
+
+	dial := N || Ln != "" || Command != ""
+	// for serial console need So!=""
+	// `choco install com0com`
+	if So != "" && !dial {
 		for _, opt := range T {
 			hphp := parseHPHP(opt, RFC2217)
 			p, err := strconv.Atoi(hphp[1])
+			// is hub4com running local?
 			if err == nil && isListen(hphp[0], p, 0) {
 				//hub4com running local
 				MenuToption = append(MenuToption, strings.Join(hphp, ":"))
 			}
 			if len(MenuToption) > 0 {
 				VisitAll("")
-				li.Println("local mode serial console  - локальный режим последовательной консоли")
+				li.Println("Local mode of serial console - Локальный режим последовательной консоли")
 				if len(MenuToption) == 1 {
 					tty(parseHPHP(MenuToption[0], RFC2217)...)
 					return
 				}
 				for {
+					fmt.Println()
 					menuT := wmenu.NewMenu(MENU)
 					menuT.Action(func(opts []wmenu.Opt) error {
 						for _, opt := range opts {
@@ -312,54 +417,43 @@ func main() {
 	}
 
 	Ips = interfaces()
-	if len(Ips) == 0 {
-		Err = srcError(fmt.Errorf("not connected - нет сети"))
-		return
-	}
-	li.Println(Ips)
+	FatalOr("not connected - нет сети", len(Ips) == 0)
+	li.Println("Interfaces", Ips)
 
-	PublicURL, metadata, Err = ngrokAPI(ngrokApiKey)
-	PrintOk(PublicURL+" "+metadata, Err)
-	NgrokSSHD = Err == nil
-	NgrokOnline = NgrokSSHD
-	if !NgrokSSHD {
-		NgrokOnline = strings.HasSuffix(Err.Error(), "not found online client")
-	}
-
-	// local server:
-	// args!="" && loginName==""
-	// ngrokSSH `*` as `0.0.0.0:22`
-	// ngrokSSH `:` as `127.0.0.1:22`
-	// ngrokSSH `@` as `127.0.0.1:22`
-	// ngrokSSH `-p 2222` as `127.0.0.1:2222`
-	if Ln == "" && (arg != "" || actual(flag.CommandLine, "p")) {
-		server()
-		return
-	}
-
-	// local client:
-	// loginName!=""
-	if Ln != "" {
-		ltf.Println("try by param")
-		Err = sshTry(un(""), h, p)
-		if Err == nil {
+	if dial && !N {
+		if Println("Try connect by param - Подключаемся по параметрам", sshTry(un(""), h, p)) {
 			client(un(""), h, p, p)
 			return
 		}
 	}
 
-	// client:
-	// args=="" || loginName!=""
-	if NgrokSSHD {
+	if n {
+		// no need ngrok
+	} else {
+		PublicURL, metadata, err = ngrokGet(NgrokApiKey)
+		Println(PublicURL, metadata, err)
+		NgrokHasTunnel = err == nil
+		NgrokOnline = NgrokHasTunnel || errors.Is(err, ErrNgrokOnlineNoTunnel)
+	}
+	// serv := !dial && (arg != "" || actual(flag.CommandLine, "p"))
+	// ngrokSSH `*` as `0.0.0.0:22`
+	// ngrokSSH `*:2222` as `0.0.0.0:2222`
+	// ngrokSSH `-p 2222` as `127.0.0.1:2222`
+	// ngrokSSH `:2222` as `127.0.0.1:2222`
+	// `ngrokSSH @x` as `ngrokSSH -n x`
+
+	if NgrokHasTunnel {
 		client(fromNgrok(PublicURL, metadata))
 		return
 	}
-	server()
+
+	for {
+		server()
+		winssh.KidsDone(os.Getpid())
+		time.Sleep(TOR)
+	}
 }
 
-func aKey() {
-
-}
 func psCount(name, parent string, ppid int) (count int) {
 	pes, err := ps.Processes()
 	if err != nil {
@@ -407,10 +501,6 @@ func interfaces() (ips []string) {
 }
 
 func cleanup() {
-	if Err != nil {
-		let.Println(Err)
-		defer os.Exit(1)
-	}
 	winssh.AllDone(os.Getpid())
 }
 
@@ -568,7 +658,7 @@ func FileToAuthorized(name string, in []ssh.PublicKey) (authorized []ssh.PublicK
 			}
 		}
 		if !found {
-			ltf.Println(name, FingerprintSHA256(out))
+			Println(name, FingerprintSHA256(out))
 			authorized = append(authorized, out)
 		}
 	}
@@ -582,8 +672,10 @@ func MarshalAuthorizedKeys(AuthorizedKeys ...ssh.PublicKey) []byte {
 	return b.Bytes()
 }
 
-func tv(s string) (ret bool, res string) {
+func rtv(s string) (ret bool, res string) {
 	switch s {
+	case CGIR: // ngrokSSH.exe -r
+		return true, CGIR
 	case CGIT: // ngrokSSH.exe -t
 		res, _ = la(HUB4COM, RFC2217)
 		return true, res
@@ -603,4 +695,47 @@ func tv(s string) (ret bool, res string) {
 		return true, res
 	}
 	return false, res
+}
+
+func HardPath(Drives []*windrive.Drive, path string) (hard bool) {
+	if len(Drives) < 1 || !(len(path) > 1 && path[1] == ':') {
+		return true //for linux
+	}
+	for _, drive := range Drives {
+		for _, partition := range drive.Partitions {
+			if !partition.Removable && strings.HasPrefix(strings.ToUpper(path), partition.Path) {
+				return true
+			}
+		}
+	}
+	return
+}
+
+func RealReset() {
+	ProxyType, ProxyServer := proxy.RealGet()
+	if ProxyServer != "" {
+		// after panic?
+		if ProxyType == "" {
+			ProxyType = "socks"
+		}
+		Println("RealGet", ProxyType, ProxyServer)
+		h, p := SplitHostPort(ProxyServer, LH, SOCKS5)
+		if ProxyType != "socks" {
+			h, p = SplitHostPort(ProxyServer, LH, HTTPX)
+		}
+		x, err := strconv.Atoi(p)
+		if err == nil && isListen(h, x, 0) {
+			if X {
+				if ProxyType == "socks" {
+					setX("all_proxy", ProxyType+"://"+net.JoinHostPort(h, p))
+				} else {
+					setX(ProxyType+"_proxy", ProxyType+"://"+net.JoinHostPort(h, p))
+				}
+			}
+			ProxyServer = net.JoinHostPort(h, p)
+			proxy.RealSet(ProxyType, ProxyServer)
+			Println("RealSet", ProxyType, ProxyServer)
+		}
+		return
+	}
 }
