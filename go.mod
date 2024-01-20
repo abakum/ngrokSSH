@@ -33,6 +33,7 @@ require (
 	github.com/ScaleFT/sshkeys v1.2.0 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
 	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
+	github.com/abakum/menu v0.0.0-20240125205951-73c26af3a5f2 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/creack/goselect v0.1.2 // indirect

@@ -15,6 +15,7 @@ import (
 	_ "embed"
 
 	"github.com/Microsoft/go-winio"
+	"github.com/abakum/menu"
 	windowsconsole "github.com/abakum/ngrokSSH/windows"
 	"github.com/abakum/pageant"
 	"github.com/abakum/proxy"
@@ -70,48 +71,61 @@ func client(user, host, port, listenAddress string) {
 	// menu
 	d := '1'
 	count := 0
-	items := []func(index int) string{}
+	// items := []func(index int) string{}
+	items := []menu.MenuFunc{Prompt}
 
 	sA := ""
 	if A {
 		sA = " -A"
 	}
-	items = append(items, func(index int) string {
-		if index > -1 {
-			return fmt.Sprintf(`%d) %s%s %s`, index+1, quote(Exe), sA, title)
+	items = append(items, func(index int, pressed rune) string {
+		r := rune('1' + index)
+		switch pressed {
+		case menu.ITEM: // item of menu
+			return fmt.Sprintf(`%c) %s%s %s`, r, quote(Exe), sA, title)
+		case r:
+			mPS(con)         // run
+			return string(r) //new def
 		}
-		mPS(con)
-		return ""
+		return "" // not for me
 	})
 
 	hostkey := ""
 	if len(KnownKeys) > 0 {
 		hostkey = " -hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
 	}
-	items = append(items, func(index int) string {
-		if index >= 1 {
-			return fmt.Sprintf(`%d) %s%s %s%s`, index+1, quote(Fns[KITTY]), sA, title, hostkey)
+	items = append(items, func(index int, pressed rune) string {
+		r := rune('1' + index)
+		switch pressed {
+		case menu.ITEM: // item of menu
+			return fmt.Sprintf(`%c) %s%s %s%s`, r, quote(Fns[KITTY]), sA, title, hostkey)
+		case r:
+			mO(title, user, host, port, false) // run
+			return string(r)                   //new def
 		}
-		mO(title, user, host, port, false)
-		return ""
+		return "" // not for me
 	})
 
 	if OpenSSH != "" {
 		if O {
-			d = rune('1' + len(items))
+			d = rune('1' + len(items) - 1)
 			count++
 		}
-		items = append(items, func(index int) string {
-			if index > -1 {
-				return fmt.Sprintf(`%d) %s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, index+1, quote(OpenSSH), sA, user, host, port, KnownHosts)
+		items = append(items, func(index int, pressed rune) string {
+			r := rune('1' + index)
+			switch pressed {
+			case menu.ITEM: // item of menu
+				return fmt.Sprintf(`%c) %s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, r, quote(OpenSSH), sA, user, host, port, KnownHosts)
+			case r:
+				mO(title, user, host, port, true) // run
+				return string(r)                  //new def
 			}
-			mO(title, user, host, port, true)
-			return ""
+			return "" // not for me
 		})
 	}
 
 	if actual(flag.CommandLine, "V") {
-		d = rune('1' + len(items))
+		d = rune('1'+len(items)) - 1
 		count++
 	}
 	for _, o := range V {
@@ -120,12 +134,16 @@ func client(user, host, port, listenAddress string) {
 			continue
 		}
 		opt := strings.Join(hphp, ":")
-		items = append(items, func(index int) string {
-			if index > -1 {
-				return fmt.Sprintf(`%d) %s`, index+1, opt)
+		items = append(items, func(index int, pressed rune) string {
+			r := rune('1' + index)
+			switch pressed {
+			case menu.ITEM: // item of menu
+				return fmt.Sprintf(`%c) %s`, r, opt)
+			case r:
+				mV(opt)          // run
+				return string(r) //new def
 			}
-			mV(opt)
-			return ""
+			return "" // not for me
 		})
 	}
 
@@ -165,7 +183,7 @@ func client(user, host, port, listenAddress string) {
 		letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
 	} else {
 		if actual(flag.CommandLine, "T") || actual(flag.CommandLine, "b") {
-			d = rune('1' + len(items))
+			d = rune('1'+len(items)) - 1
 			count++
 		}
 		for _, o := range T {
@@ -174,18 +192,22 @@ func client(user, host, port, listenAddress string) {
 				continue
 			}
 			opt := strings.Join(hphp, ":")
-			items = append(items, func(index int) string {
-				if index > -1 {
-					return fmt.Sprintf(`%d) %s`, index+1, opt)
+			items = append(items, func(index int, pressed rune) string {
+				r := rune('1' + index)
+				switch pressed {
+				case menu.ITEM: // item of menu
+					return fmt.Sprintf(`%c) %s`, r, opt)
+				case r:
+					tty(parseHPHP(opt, RFC2217)...) // run
+					return string(r)                //new def
 				}
-				tty(parseHPHP(opt, RFC2217)...)
-				return ""
+				return "" // not for me
 			})
 		}
 	}
 
 	ska(con)
-	menu(prompt, MARK, d, count == 1, true, items...)
+	menu.Menu(d, count == 1 && d != '1', true, items...)
 }
 
 func quote(s string) string {

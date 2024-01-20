@@ -5,6 +5,7 @@ go get github.com/abakum/go-console@latest
 go get github.com/abakum/winssh@latest
 go get github.com/abakum/go-netstat@latest
 go get github.com/abakum/proxy@latest
+go get github.com/abakum/menu@latest
 
 go get github.com/gliderlabs/ssh
 go get github.com/pkg/sftp
@@ -25,7 +26,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -40,9 +40,9 @@ import (
 	"time"
 
 	"github.com/Desuuuu/windrive"
+	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
-	"github.com/eiannone/keyboard"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
 	"github.com/xlab/closer"
@@ -397,26 +397,31 @@ func main() {
 	// for serial console need So!=""
 	// `choco install com0com`
 	if So != "" && !dial {
-		items := []func(index int) string{}
+		// items := []func(index int) string{}
+		items := []menu.MenuFunc{Prompt}
 		for _, opt := range T {
 			hphp := parseHPHP(opt, RFC2217)
 			p, err := strconv.Atoi(hphp[1])
 			// is hub4com running local?
 			if err == nil && isListen(hphp[0], p, 0) {
 				//hub4com running local
-				items = append(items, func(index int) string {
-					if index > -1 {
-						return fmt.Sprintf("%d) %s", index, strings.Join(hphp, ":"))
+				items = append(items, func(index int, pressed rune) string {
+					r := rune('1' + index)
+					switch pressed {
+					case menu.ITEM: // item of menu
+						return fmt.Sprintf("%c) %s", r, strings.Join(hphp, ":"))
+					case r:
+						tty(hphp...)     // run
+						return string(r) //new def
 					}
-					tty(hphp...)
-					return ""
+					return "" // not for me
 				})
 			}
 		}
-		if len(items) > 0 {
+		if len(items) > 1 {
 			VisitAll("")
 			li.Println("Local mode of serial console - Локальный режим последовательной консоли")
-			menu(prompt, MARK, '1', len(items) == 1, true, items...)
+			menu.Menu('1', len(items) == 2, true, items...)
 		}
 	}
 
@@ -751,133 +756,6 @@ func RealReset() {
 	}
 }
 
-type BasicUI struct {
-	Reader      io.Reader
-	Writer      io.Writer
-	ErrorWriter io.Writer
-}
-
-func menu(prompt func(index int, def rune) string, mark, def rune, keyEnter, exitOnTypo bool, items ...func(index int) string) {
-	const runFunc = -1
-	var (
-		key   keyboard.Key
-		err   error
-		r     rune
-		index = -1
-	)
-	for {
-		// Print menu
-		fmt.Println()
-		newD := false // search mark or set GT by index
-		for i, item := range items {
-			rs := []rune(item(i)) //get menu item
-			if len(rs) < 1 {
-				continue
-			}
-			newD = rs[0] == mark
-			if newD {
-				if len(rs) < 2 {
-					continue
-				}
-				rs = rs[1:]
-			}
-			if index > -1 {
-				if index == i {
-					def = rs[0]
-				}
-			} else {
-				if newD {
-					def = rs[0]
-				}
-			}
-		}
-
-		index = -1
-		for i, item := range items { //print menu
-			rs := []rune(item(i)) //get menu item
-			if len(rs) < 1 {
-				continue
-			}
-			m := " "
-			if rs[0] == mark { // new d
-				if len(rs) < 2 {
-					continue
-				}
-				m = string(mark)
-				rs = rs[1:]
-			}
-			if def == rs[0] {
-				m = Gt
-				index = i
-			}
-			fmt.Printf("%s%s\n", m, string(rs))
-		}
-		fmt.Print(prompt(index, def), Gt)
-		if keyEnter {
-			r = def
-		} else {
-			r, key, err = keyboard.GetSingleKey()
-			if err != nil {
-				fmt.Println(Bug)
-				return
-			}
-			if key == keyboard.KeyEnter {
-				r = def
-			}
-		}
-		keyEnter = false
-		def = r
-		if r == 0 {
-			fmt.Printf("0x%X\n", key)
-			switch key {
-			case keyboard.KeyHome:
-				index = 0
-				continue
-			case keyboard.KeyArrowUp:
-				if index == 0 {
-					index = len(items) - 1
-				} else {
-					index--
-				}
-				continue
-			case keyboard.KeyEnd:
-				index = len(items) - 1
-				continue
-			case keyboard.KeyArrowDown:
-				if index == len(items)-1 {
-					index = 0
-				} else {
-					index++
-				}
-				continue
-			}
-		} else {
-			fmt.Printf("%c\n", def)
-		}
-		index = -1
-		ok := false
-	doit:
-		for i, item := range items {
-			rs := []rune(item(i)) //get menu item
-			if len(rs) < 1 {
-				continue
-			}
-			if rs[0] == mark { //ignore mark from item
-				if len(rs) < 2 {
-					continue
-				}
-				rs = rs[1:]
-			}
-			ok = def == rs[0]
-			if ok {
-				if len(item(runFunc)) > 0 { // run func of menu item
-					return // for once selected menu
-				}
-				break doit
-			}
-		}
-		if exitOnTypo && !ok {
-			return
-		}
-	}
+func Prompt(int, rune) string {
+	return MENU
 }

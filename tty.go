@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abakum/menu"
 	"github.com/f1bonacc1/glippy"
 	"gopkg.in/ini.v1"
 )
@@ -75,82 +76,89 @@ func tty(hphp ...string) {
 	Hub.Stdout = os.Stdout
 	Hub.Stderr = os.Stderr
 
-	items := []func(index int) string{}
-	items = append(items, func(index int) string {
-		return setDelay(index, DELAY)
-	})
-	items = append(items, func(index int) string {
-		return kiRun(index, "115200")
-	})
-	items = append(items, func(index int) string {
-		return setDelay(index, "0.2")
-	})
-	items = append(items, func(index int) string {
-		return kiRun(index, "38400")
-	})
-	items = append(items, func(index int) string {
-		return setDelay(index, "0.4")
-	})
-	items = append(items, func(index int) string {
-		return kiRun(index, "57600")
-	})
-	items = append(items, func(index int) string {
-		return setDelay(index, "0.6")
-	})
-	items = append(items, func(index int) string {
-		return setDelay(index, "0.7")
-	})
-	items = append(items, func(index int) string {
-		return setDelay(index, "0.08")
-	})
-	items = append(items, func(index int) string {
-		return kiRun(index, B9600)
-	})
-
-	menu(func(i int, d rune) string {
+	items := []menu.MenuFunc{func(index int, pressed rune) string {
 		if Delay != DELAY {
 			return "Choose baud and seconds delay for Ctrl-F2 or commands from clipboard\n" +
 				"Выбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера"
 		}
 		return "Choose baud and seconds delay for Ctrl-F2\n" +
 			"Выбери скорость и задержку в секундах для Ctrl-F2"
-	},
-		MARK, '9', actual(flag.CommandLine, Baud), true, items...)
+	}}
+	items = append(items, func(index int, pressed rune) string {
+		return setDelay(index, pressed, DELAY)
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return kiRun(index, pressed, "115200")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return setDelay(index, pressed, "0.2")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return kiRun(index, pressed, "38400")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return setDelay(index, pressed, "0.4")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return kiRun(index, pressed, "57600")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return setDelay(index, pressed, "0.6")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return setDelay(index, pressed, "0.7")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return setDelay(index, pressed, "0.08")
+	})
+	items = append(items, func(index int, pressed rune) string {
+		return kiRun(index, pressed, B9600)
+	})
+
+	menu.Menu('9', actual(flag.CommandLine, Baud), true, items...)
 }
 
-func setDelay(index int, d string) string {
-	mark := ""
-	if Delay == d {
-		mark = string(MARK)
+func setDelay(index int, pressed rune, d string) string {
+	r := rune('0' + index)
+	switch pressed {
+	case menu.MARKED: // marked
+		if Delay == d {
+			return menu.MARK
+		}
+	case menu.ITEM: // item of menu
+		return fmt.Sprintf(`%c) %s`, r, d)
+	case r:
+		Delay = d // run
+		return string(r)
 	}
-	if index > -1 {
-		return fmt.Sprintf(`%s%d) %s`, mark, index, d)
-	}
-	Delay = d
-	return ""
+	return "" // not for me
 }
 
-func kiRun(index int, b string) string {
-	mark := ""
-	if Baud == b {
-		mark = string(MARK)
-	}
-	if index > -1 {
-		return fmt.Sprintf(`%s%d) %s`, mark, index, b)
-	}
-	Baud = b
-	opts := []string{
-		"-sercfg",
-		Baud,
-		"-serial",
-		"COM" + So,
-	}
-	Println("cmdFromClipBoard", command(&opts))
-	ki := exec.Command(Fns[KITTY], opts...)
+func kiRun(index int, pressed rune, b string) string {
+	r := rune('0' + index)
+	switch pressed {
+	case menu.MARKED: // marked
+		if Baud == b {
+			return menu.MARK
+		}
+	case menu.ITEM: // item of menu
+		return fmt.Sprintf(`%c) %s`, r, b)
+	case r:
+		Baud = b // run
+		opts := []string{
+			"-sercfg",
+			Baud,
+			"-serial",
+			"COM" + So,
+		}
+		Println("cmdFromClipBoard", command(&opts))
+		ki := exec.Command(Fns[KITTY], opts...)
 
-	ltf.Println(cmd("Run", ki))
-	Println(cmd("Close", ki), ki.Run())
-	return ""
+		ltf.Println(cmd("Run", ki))
+		Println(cmd("Close", ki), ki.Run())
+		return string(r)
+	}
+	return "" // not for me
 }
 
 func kill() {
