@@ -42,12 +42,14 @@ import (
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
 	"github.com/dixonwille/wmenu/v5"
+	"github.com/eiannone/keyboard"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
 	"github.com/xlab/closer"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 const (
@@ -110,12 +112,13 @@ var (
 	KnownHosts,
 	Crypt,
 	RealVV,
-	Command,
+	Cmd,
 	_ string
 
 	NgrokOnline,
 	NgrokHasTunnel,
 	A,
+	D,
 	N,
 	O,
 	h,
@@ -125,6 +128,9 @@ var (
 	t,
 	v,
 	n,
+	dial,
+	serv,
+	PressEnter,
 	_ bool
 
 	L,
@@ -148,7 +154,79 @@ var (
 	Once     sync.Once
 	pemBytes []byte
 	Bug      = "Ж"
+	States   [3]*term.State
 )
+
+func statesGet() {
+	var err error
+	fd := os.Stdin.Fd()
+	States[0], err = term.GetState(int(fd))
+	Println(fd, States[0], err)
+
+	fd = os.Stdout.Fd()
+	States[1], err = term.GetState(int(fd))
+	Println(fd, States[1], err)
+
+	fd = os.Stderr.Fd()
+	States[2], err = term.GetState(int(fd))
+	Println(fd, States[2], err)
+}
+
+func statesSet() {
+	fd := os.Stdin.Fd()
+	Println(fd, States[0], term.Restore(int(fd), States[0]))
+
+	fd = os.Stdout.Fd()
+	Println(fd, States[1], term.Restore(int(fd), States[1]))
+
+	fd = os.Stderr.Fd()
+	Println(fd, States[2], term.Restore(int(fd), States[2]))
+}
+
+func statesPrint() {
+	fd := os.Stdin.Fd()
+	s, err := term.GetState(int(fd))
+	Println(fd, s, err)
+
+	fd = os.Stdout.Fd()
+	s, err = term.GetState(int(fd))
+	Println(fd, s, err)
+
+	fd = os.Stderr.Fd()
+	s, err = term.GetState(int(fd))
+	Println(fd, s, err)
+}
+
+func menu() {
+	if err := keyboard.Open(); err != nil {
+		return
+	}
+	defer func() {
+		_ = keyboard.Close()
+	}()
+	for {
+		fmt.Println()
+		fmt.Println(1)
+		fmt.Println(2)
+		fmt.Println(3)
+		fmt.Println(MENU)
+		char, key, err := keyboard.GetKey()
+		if err != nil {
+			return
+		}
+		switch char {
+		case '1':
+			mn()
+		case '2':
+			mn()
+		case '3':
+			mn()
+		default:
+			fmt.Printf("You pressed: rune %q, key %X\r\n", char, key)
+			return
+		}
+	}
+}
 
 func main() {
 	const (
@@ -160,6 +238,7 @@ func main() {
 		sp string
 		err error
 	)
+
 	NgrokAuthToken = Getenv(NGROK_AUTHTOKEN, NgrokAuthToken) //create ngrok
 	NgrokApiKey = Getenv(NGROK_API_KEY, NgrokApiKey)         //use ngrok
 
@@ -264,6 +343,7 @@ func main() {
 	flag.BoolVar(&A, "A", false, fmt.Sprintf("authentication `agent` forwarding as - перенос авторизации как `ssh -A`\nexample - пример `%s -A`", Image))
 
 	flag.Var(&C, "C", fmt.Sprintf("`COM` serial port for daemon - последовательный порт для сервера `hub4com`\nexample - пример `%s -C 7`", Image))
+	flag.BoolVar(&D, "D", false, fmt.Sprintf("force LAN mode for `daemon` - режим локального сервера\nexample - пример `%s -D` or `%s @`", Image, Image))
 	flag.Var(&L, "L", fmt.Sprintf("`local` port forwarding as - перенос ближнего порта как `ssh -L [bindHost:]bindPort[:dialHost:dialPort]` or\nlocal socks5 proxy as `ssh -D [bindHost:]bindPort`\nexample - пример `%s -L 80:0.0.0.0:80`", Image))
 	flag.BoolVar(&N, "N", false, fmt.Sprintf("force `ngrok` mode - подключаться через туннель\nexample - пример `%s -N` or `%s :`", Image, Image))
 	OpenSSH, err = exec.LookPath("ssh")
@@ -287,7 +367,7 @@ func main() {
 	flag.StringVar(&Baud, "b", "", fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 9600` or `%s -b 9`", Image, Image))
 	flag.BoolVar(&h, "h", h, fmt.Sprintf("show `help` for usage - показать использование параметров\nexample - пример `%s -h`", Image))
 	flag.StringVar(&Ln, "l", "", fmt.Sprintf("`login` name as `ssh -l ln`\nexample - пример `%s -l root 192.168.0.1:2222` or `%s root@192.168.0.1:2222`", Image, Image))
-	flag.BoolVar(&n, "n", false, fmt.Sprintf("do not use `ngrok` for daemon - не использовать ngrok для сервера\nexample - пример `%s -n` or `%s @`", Image, Image))
+	flag.BoolVar(&n, "n", false, fmt.Sprintf("do not use `ngrok` for dial - использовать режим LAN\nexample - пример `%s -n` or `%s .`", Image, Image))
 	flag.StringVar(&sp, "p", PORT, fmt.Sprintf("ssh `port` as `ssh -p port ln@host` or `sshd -p port`\nexample - пример `%s -p 2222` or `%s -p 2222 root@192.168.0.1`", Image, Image))
 	flag.BoolVar(&r, "r", false, fmt.Sprintf("`restart` daemon - перезапустить сервер\nexample - пример `%s -r`", Image))
 	flag.StringVar(&So, "s", So, fmt.Sprintf("`serial` port for console - последовательный порт для консоли\nexample - пример `%s -s 11`", Image))
@@ -329,45 +409,55 @@ func main() {
 			sp = PORT
 		}
 	}
-	if !actual(flag.CommandLine, "V") {
+	if actual(flag.CommandLine, "V") {
+		dial = true
+	} else {
 		V.Set("")
 	}
-	if !actual(flag.CommandLine, "T") {
+	if actual(flag.CommandLine, "T") {
+		dial = true
+	} else {
 		T.Set("")
 	}
 
-	if len(C) == 0 {
+	if actual(flag.CommandLine, "C") {
+		serv = true
+	} else {
 		C = Coms[:]
 	}
 	arg := flag.Arg(0)
 	Hp = arg
 
+	// PublicURL, metadata, err = ngrokGet(NgrokApiKey)
+	// `ngrokSSH -D host:port` as `ngrokSSH @host:port`
 	if strings.Contains(arg, "@") { // a@b:2222
 		uhp := strings.Split(arg, "@") // [a b:2222]
 		Ln = uhp[0]                    // a
-		n = Ln == ""                   // @
+		D = Ln == ""                   // @x
 		if len(uhp) > 1 {              // b:2222
 			Hp = uhp[1]
 		}
 	}
 
-	// `ngrokSSH -N set` as `ngrokSSH : set`
-	// where Ln@host:port from _,metadata,_:=ngrokGet(NgrokApiKey)
-	// as `ngrokSSH Ln@host:port`
-	if N {
-		Command = strings.Join(flag.Args()[:], " ")
+	// `ngrokSSH -N set` as `ngrokSSH : set` user from metadata and host:port from PublicURL
+	// `ngrokSSH -n set` as `ngrokSSH . set` user and host:port from metadata
+	if N || n {
+		Cmd = strings.Join(flag.Args()[:], " ")
 	} else if len(flag.Args()) > 1 {
-		Command = strings.Join(flag.Args()[1:], " ")
+		Cmd = strings.Join(flag.Args()[1:], " ")
 	}
-	if Hp == ":" { // `ngrokSSH :` as `ngrokSSH -N`
+	switch Hp {
+	case ":":
 		N = true
+	case ".":
+		n = true
 	}
 
 	h, p := SplitHostPort(Hp, LH, sp)
 	Hp = net.JoinHostPort(h, p)
 
 	defer closer.Close()
-	if Command == "" {
+	if Cmd == "" {
 		closer.Bind(cleanup)
 	}
 
@@ -375,7 +465,9 @@ func main() {
 		li.Println("Another one has been launched - Запущен ещё один", Image)
 	}
 
-	dial := N || Ln != "" || Command != ""
+	dial = dial || N || n || Ln != "" || Cmd != "" || A || O || X
+	dial = dial || actual(flag.CommandLine, "L") || actual(flag.CommandLine, "R") || actual(flag.CommandLine, "S")
+	serv = serv || D
 	// for serial console need So!=""
 	// `choco install com0com`
 	if So != "" && !dial {
@@ -420,14 +512,14 @@ func main() {
 	FatalOr("not connected - нет сети", len(Ips) == 0)
 	li.Println("Interfaces", Ips)
 
-	if dial && !N {
+	if dial && !N && !n {
 		if Println("Try connect by param - Подключаемся по параметрам", sshTry(un(""), h, p)) {
 			client(un(""), h, p, p)
 			return
 		}
 	}
 
-	if n {
+	if D {
 		// no need ngrok
 	} else {
 		PublicURL, metadata, err = ngrokGet(NgrokApiKey)
@@ -442,7 +534,7 @@ func main() {
 	// ngrokSSH `:2222` as `127.0.0.1:2222`
 	// `ngrokSSH @x` as `ngrokSSH -n x`
 
-	if NgrokHasTunnel {
+	if NgrokHasTunnel && !serv {
 		client(fromNgrok(PublicURL, metadata))
 		return
 	}
@@ -735,7 +827,10 @@ func RealReset() {
 			ProxyServer = net.JoinHostPort(h, p)
 			proxy.RealSet(ProxyType, ProxyServer)
 			Println("RealSet", ProxyType, ProxyServer)
+			return
 		}
+		proxy.RealSet("", "")
+		Println("RealSet", "", "")
 		return
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -14,10 +15,12 @@ import (
 	_ "embed"
 
 	"github.com/Microsoft/go-winio"
+	windowsconsole "github.com/abakum/ngrokSSH/windows"
 	"github.com/abakum/pageant"
 	"github.com/abakum/proxy"
 	"github.com/blacknon/go-sshlib"
 	"github.com/dixonwille/wmenu/v5"
+	termm "github.com/moby/term"
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -34,14 +37,12 @@ func client(user, host, port, listenAddress string) {
 		AB       = "AB"
 	)
 	var (
-		sock    net.Conn
-		signers []ssh.Signer
-		// session     *ssh.Session
+		sock        net.Conn
+		signers     []ssh.Signer
 		menuVoption []string
 		menuVid     = 0
 		err         error
 	)
-	// Fatal(fmt.Errorf("123"))
 	title := fmt.Sprintf("%s@%s:%s", user, host, port)
 
 	VisitAll(title)
@@ -60,21 +61,14 @@ func client(user, host, port, listenAddress string) {
 	FatalOr("len(signers) < 1", len(signers) < 1)
 
 	Fatal(con.CreateClient(host, port, user, []ssh.AuthMethod{ssh.PublicKeys(signers...)}))
+	Println(string(con.Client.ServerVersion()))
 
-	if Command != "" {
-		con.Command(Command)
-		if err != nil {
-			letf.Println(err)
-		}
+	if Cmd != "" {
+		con.TTY = true
+		con.Stdin, con.Stdout, con.Stderr = termm.StdStreams()
+		Println(Cmd, con.Command(Cmd))
 		return
 	}
-
-	// var bb bytes.Buffer
-	// con.Stdout = &bb
-
-	// Create Session
-	// session, err = con.CreateSession()
-	// Fatal(err)
 
 	for _, o := range V {
 		hphp, e := cgi(con, Image+" "+CGIV, o, RFB)
@@ -128,9 +122,10 @@ func client(user, host, port, listenAddress string) {
 		}
 	}
 
-	// ska(con, session)
+	ska(con)
 	o := 0
-	if a {
+	aa := true || a
+	if aa {
 		o++
 	}
 	if OpenSSH != "" {
@@ -158,7 +153,7 @@ func client(user, host, port, listenAddress string) {
 			mV(menuVoption[0])
 		}
 	default:
-		if a {
+		if aa {
 			menuVid++
 		}
 		if O {
@@ -167,22 +162,26 @@ func client(user, host, port, listenAddress string) {
 	}
 	hostkey := ""
 	if len(KnownKeys) > 0 {
-		hostkey = "-hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
+		hostkey = " -hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
 	}
-	m0 := fmt.Sprintf("%s %s %s", Fns[KITTY], title, hostkey)
-	m1 := fmt.Sprintf("%s %s", Exe, title)
-	mo := fmt.Sprintf(`%s -l %s %s -p %s -o "UserKnownHostsFile=%s"`, OpenSSH, user, host, port, KnownHosts)
+	sA := ""
+	if A {
+		sA = " -A"
+	}
+	m0 := fmt.Sprintf(`"%s"%s %s%s`, Fns[KITTY], sA, title, hostkey)
+	m1 := fmt.Sprintf(`"%s"%s %s`, Exe, sA, title)
+	mo := fmt.Sprintf(`"%s"%s %s@%s -p %s -o UserKnownHostsFile="%s"`, OpenSSH, sA, user, host, port, KnownHosts)
+	Println(m0, m1, mo)
 	for {
 		fmt.Println()
-		// wmenu.Clear()
-
 		menuV := wmenu.NewMenu(MENU)
 		menuV.Action(func(opts []wmenu.Opt) error {
 			for _, opt := range opts {
 				menuVid = opt.ID
 				switch {
 				case menuVid < 1+o:
-					if a && menuVid == 1 {
+					if aa && menuVid == 1 {
+						// mn()
 						mPS(con)
 					} else {
 						mO(title, user, host, port, menuVid > 0)
@@ -199,7 +198,7 @@ func client(user, host, port, listenAddress string) {
 			return nil
 		})
 		menuV.Option(m0, nil, menuVid == 0, nil)
-		if a {
+		if aa {
 			menuV.Option(m1, nil, menuVid == 1, nil)
 		}
 		if OpenSSH != "" {
@@ -208,20 +207,25 @@ func client(user, host, port, listenAddress string) {
 		for i, opt := range append(menuVoption, MenuToption...) {
 			menuV.Option(opt, nil, menuVid == i+1+o, nil)
 		}
+		// statesSet()
 		if menuV.Run() != nil {
 			return
 		}
+		// 	statesPrint()
+		// 	menuV = nil
 	}
 }
+
+func mn() {
+	shell := exec.Command("cmd")
+	// shell.Stdin, shell.Stdout, shell.Stderr = termm.StdStreams()
+	shell.Stdin, shell.Stdout, shell.Stderr = os.Stdin, os.Stdout, os.Stdout
+	fmt.Println(cmd("Run", shell))
+	fmt.Println(cmd("Stop", shell), shell.Run())
+}
+
 func mPS(con *sshlib.Connect) {
-	seSh, err := con.CreateSession()
-	if err != nil {
-		letf.Println(err)
-		return
-	}
-	defer seSh.Close()
-	con.Shell(seSh)
-	// PrintOk("Shell", Shell(con, seSh))
+	Shell(con)
 }
 
 func mV(opt string) {
@@ -322,8 +326,13 @@ func fromNgrok(publicURL, meta string) (user, host, port, listenAddress string) 
 	return
 }
 
-func ska(con *sshlib.Connect, session *ssh.Session) {
+// KeepAlive for portforward
+func ska(con *sshlib.Connect) {
 	if isListen("", 0, os.Getpid()) {
+		session, err := con.CreateSession()
+		if err != nil {
+			return
+		}
 		con.SendKeepAliveInterval = 100
 		con.SendKeepAliveMax = 3
 		go con.SendKeepAlive(session)
@@ -351,6 +360,7 @@ func sshTry(u, h, p string) (err error) {
 	if err != nil {
 		return
 	}
+	// Println(string(client.ServerVersion()))
 	client.Close()
 	return
 }
@@ -493,29 +503,13 @@ func cgi(con *sshlib.Connect, cc, opt string, port int) (hphp []string, err erro
 		return tryBindL(con, hphp...)
 	}
 	var o bytes.Buffer
-	if false {
-		var i bytes.Buffer
-		con.Stdin = &i
-		con.Stdout = &o
-		err = con.Command(cc)
-		con.Stdout = nil
-		con.Stdin = nil
-	} else {
-		con.Session, err = con.CreateSession()
-		if err != nil {
-			return
-		}
-		defer func() {
-			con.Session.Close()
-			con.Session = nil
-		}()
-		con.Session.Stdout = &o
-		err = con.Session.Run(cc)
-		if err != nil {
-			return
-		}
-	}
-	Println(o.String(), err)
+	con.Stdin = new(bytes.Buffer)
+	con.Stdout = &o
+	con.Stderr = io.Discard
+	Println(cc, con.Command(cc), o.String())
+	con.Stdin = nil
+	con.Stdout = nil
+	con.Stderr = nil
 	h, p, err := net.SplitHostPort(o.String())
 	if err != nil {
 		return
@@ -574,7 +568,7 @@ func VisitAll(uhp string) {
 			o += fmt.Sprintf("%s%s=%s ", minus, f.Name, f.Value)
 		}
 	})
-	ltf.Printf("%s %s%s %s\n", Image, o, strings.TrimSuffix(uhp, ":"+PORT), Command)
+	ltf.Printf("%s %s%s %s\n", Image, o, strings.TrimSuffix(uhp, ":"+PORT), Cmd)
 }
 
 type fixedHostKeys struct {
@@ -609,23 +603,41 @@ func setX(key, val string) {
 	Println(cmd("Run", set), set.Run())
 }
 
-func setupShell(c *sshlib.Connect, session *ssh.Session) (err error) {
-	// set FD
-	stdin := sshlib.GetStdin()
-	session.Stdin = stdin
-	// session.Stdin = os.StdInput
-	session.Stdout = os.Stdout
-	session.Stderr = os.Stderr
+func setupShell(c *sshlib.Connect) (err error) {
+	// Set Stdin, Stdout, Stderr...
+	c.Session.Stdin = c.Stdin
+	c.Session.Stdout = c.Stdout
+	c.Session.Stderr = c.Stderr
+	// w, e := c.Session.StdinPipe()
+	// if e == nil {
+	// 	go io.Copy(w, c.Stdin)
+	// } else {
+	// 	c.Session.Stdin = sshlib.GetStdin()
+	// }
+
+	// or, e := c.Session.StdoutPipe()
+	// if e == nil {
+	// 	go io.Copy(c.Stdout, or)
+	// } else {
+	// 	c.Session.Stdout = os.Stdout
+	// }
+
+	// er, e := c.Session.StderrPipe()
+	// if e == nil {
+	// 	go io.Copy(c.Stderr, er)
+	// } else {
+	// 	c.Session.Stderr = os.Stderr
+	// }
 
 	// Request tty
-	err = sshlib.RequestTty(session)
+	err = sshlib.RequestTty(c.Session)
 	if err != nil {
 		return err
 	}
 
 	// x11 forwarding
 	if c.ForwardX11 {
-		err = c.X11Forward(session)
+		err = c.X11Forward(c.Session)
 		if err != nil {
 			letf.Println(err)
 		}
@@ -634,39 +646,149 @@ func setupShell(c *sshlib.Connect, session *ssh.Session) (err error) {
 
 	// ssh agent forwarding
 	if c.ForwardAgent {
-		c.ForwardSshAgent(session)
+		c.ForwardSshAgent(c.Session)
 	}
 
 	return
 }
 
 // Shell connect login shell over ssh.
-func Shell(c *sshlib.Connect, session *ssh.Session) (err error) {
-	// Input terminal Make raw
-	// fd := int(os.Stdin.Fd())
-	// terminal.GetState(fd)
-	// state, err := terminal.MakeRaw(fd)
-	// if err != nil {
-	// 	return
-	// }
-	// defer terminal.Restore(fd, state)
+// like Command
+func Shell(c *sshlib.Connect) (err error) {
+	if c.Session == nil {
+		c.Session, err = c.CreateSession()
+		if err != nil {
+			return
+		}
+	}
+	defer func() {
+		// c.Session.Close()
+		c.Session = nil
+	}()
+
+	si, err := termm.SetRawTerminal(os.Stdin.Fd())
+	if err != nil {
+		return
+	}
+	defer termm.RestoreTerminal(os.Stdin.Fd(), si)
+
+	so, err := termm.SetRawTerminalOutput(os.Stdout.Fd())
+	if err != nil {
+		return
+	}
+	defer termm.RestoreTerminal(os.Stdout.Fd(), so)
+
+	se, err := termm.SetRawTerminalOutput(os.Stderr.Fd())
+	if err != nil {
+		return
+	}
+	defer termm.RestoreTerminal(os.Stderr.Fd(), se)
+
+	// c.Stdin, c.Stdout, c.Stderr = termm.StdStreams()
+	_, c.Stdout, c.Stderr = termm.StdStreams()
+
+	stdin, err := windowsconsole.NewAnsiReaderDuplicateFile(os.Stdin)
+	if err != nil {
+		return
+	}
+	defer stdin.Close()
+
+	c.Stdin = stdin
+
+	defer func() {
+		c.Stdin, c.Stdout, c.Stderr = nil, nil, nil
+	}()
 
 	// setup
-	err = setupShell(c, session)
+	err = setupShell(c)
 	if err != nil {
 		return
 	}
 
 	// Start shell
-	err = session.Shell()
+	err = c.Session.Shell()
 	if err != nil {
 		return
 	}
 
 	// keep alive packet
-	go c.SendKeepAlive(session)
+	go c.SendKeepAlive(c.Session)
 
-	err = session.Wait()
+	err = c.Session.Wait()
+	// c.Stdin = new(bytes.Buffer)
+	// c.Session.Stdin = new(bytes.Buffer)
+	return
+}
+
+// Command connect and run command over ssh.
+// Output data is processed by channel because it is executed in parallel. If specification is troublesome, it is good to generate and process session from ssh package.
+func Command(c *sshlib.Connect, command string) (err error) {
+	// create session
+	if c.Session == nil {
+		c.Session, err = c.CreateSession()
+		if err != nil {
+			return
+		}
+	}
+	defer func() { c.Session = nil }()
+
+	// setup options
+	err = setOption(c, c.Session)
+	if err != nil {
+		return
+	}
+
+	// Set Stdin, Stdout, Stderr...
+	if c.Stdin != nil {
+		w, _ := c.Session.StdinPipe()
+		go io.Copy(w, c.Stdin)
+	} else {
+		stdin := sshlib.GetStdin()
+		c.Session.Stdin = stdin
+	}
+
+	if c.Stdout != nil {
+		or, _ := c.Session.StdoutPipe()
+		go io.Copy(c.Stdout, or)
+	} else {
+		c.Session.Stdout = os.Stdout
+	}
+
+	if c.Stderr != nil {
+		er, _ := c.Session.StderrPipe()
+		go io.Copy(c.Stderr, er)
+	} else {
+		c.Session.Stderr = os.Stderr
+	}
+
+	// Run Command
+	c.Session.Run(command)
+
+	return
+}
+
+func setOption(c *sshlib.Connect, session *ssh.Session) (err error) {
+	// Request tty
+	if c.TTY {
+		err = sshlib.RequestTty(session)
+		if err != nil {
+			return err
+		}
+	}
+
+	// ssh agent forwarding
+	if c.ForwardAgent {
+		c.ForwardSshAgent(session)
+	}
+
+	// x11 forwarding
+	if c.ForwardX11 {
+		err = c.X11Forward(session)
+		if err != nil {
+			letf.Println(err)
+		}
+		err = nil
+	}
 
 	return
 }
