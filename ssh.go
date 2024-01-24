@@ -19,7 +19,6 @@ import (
 	"github.com/abakum/pageant"
 	"github.com/abakum/proxy"
 	"github.com/blacknon/go-sshlib"
-	"github.com/eiannone/keyboard"
 	termm "github.com/moby/term"
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
@@ -37,11 +36,9 @@ func client(user, host, port, listenAddress string) {
 		AB       = "AB"
 	)
 	var (
-		sock        net.Conn
-		signers     []ssh.Signer
-		menuVoption []string
-		menuId      = 0
-		err         error
+		sock    net.Conn
+		signers []ssh.Signer
+		err     error
 	)
 	title := fmt.Sprintf("%s@%s:%s", user, host, port)
 
@@ -70,15 +67,69 @@ func client(user, host, port, listenAddress string) {
 		return
 	}
 
+	// menu
+	d := '1'
+	count := 0
+	items := []func(index int) string{}
+
+	sA := ""
+	if A {
+		sA = " -A"
+	}
+	items = append(items, func(index int) string {
+		if index > -1 {
+			return fmt.Sprintf(`%d) %s%s %s`, index+1, quote(Exe), sA, title)
+		}
+		mPS(con)
+		return ""
+	})
+
+	hostkey := ""
+	if len(KnownKeys) > 0 {
+		hostkey = " -hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
+	}
+	items = append(items, func(index int) string {
+		if index >= 1 {
+			return fmt.Sprintf(`%d) %s%s %s%s`, index+1, quote(Fns[KITTY]), sA, title, hostkey)
+		}
+		mO(title, user, host, port, false)
+		return ""
+	})
+
+	if OpenSSH != "" {
+		if O {
+			d = rune('1' + len(items))
+			count++
+		}
+		items = append(items, func(index int) string {
+			if index > -1 {
+				return fmt.Sprintf(`%d) %s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, index+1, quote(OpenSSH), sA, user, host, port, KnownHosts)
+			}
+			mO(title, user, host, port, true)
+			return ""
+		})
+	}
+
+	if actual(flag.CommandLine, "V") {
+		d = rune('1' + len(items))
+		count++
+	}
 	for _, o := range V {
 		hphp, e := cgi(con, Image+" "+CGIV, o, RFB)
 		if e != nil {
 			continue
 		}
-		menuVoption = append(menuVoption, strings.Join(hphp, ":"))
+		opt := strings.Join(hphp, ":")
+		items = append(items, func(index int) string {
+			if index > -1 {
+				return fmt.Sprintf(`%d) %s`, index+1, opt)
+			}
+			mV(opt)
+			return ""
+		})
 	}
 
-	if actual(flag.CommandLine, "S") || len(menuVoption) > 0 {
+	if actual(flag.CommandLine, "S") || len(V) > 0 {
 		i5, err := strconv.Atoi(S)
 		if err == nil && !isListen("", i5, 0) {
 			L = append(L, S)
@@ -113,99 +164,28 @@ func client(user, host, port, listenAddress string) {
 	if So == "" {
 		letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
 	} else {
+		if actual(flag.CommandLine, "T") || actual(flag.CommandLine, "b") {
+			d = rune('1' + len(items))
+			count++
+		}
 		for _, o := range T {
 			hphp, e := cgi(con, Image+" "+CGIT, o, RFC2217)
 			if e != nil {
 				continue
 			}
-			MenuToption = append(MenuToption, strings.Join(hphp, ":"))
+			opt := strings.Join(hphp, ":")
+			items = append(items, func(index int) string {
+				if index > -1 {
+					return fmt.Sprintf(`%d) %s`, index+1, opt)
+				}
+				tty(parseHPHP(opt, RFC2217)...)
+				return ""
+			})
 		}
 	}
 
 	ska(con)
-	o := 1
-	if OpenSSH != "" {
-		o++
-	}
-	switch {
-	case actual(flag.CommandLine, "T") || actual(flag.CommandLine, "b"):
-		menuId = len(menuVoption) + 1 + o
-		if len(MenuToption) == 1 {
-			tty(parseHPHP(MenuToption[0], RFC2217)...)
-		}
-	case actual(flag.CommandLine, "V"):
-		menuId = 1 + o
-		opts := []string{GEOMETRY}
-		if psCount(REALVAB, "", 0) == 0 {
-			opts = append(opts,
-				"-ViewerPath="+Exe,
-				"-MinimiseToTray=0",
-				"-AddressBook="+Fns[AB],
-			)
-		}
-		vab := exec.Command(Fns[REALVAB], opts...)
-		Println(cmd("Start", vab), vab.Start())
-		if len(menuVoption) == 1 {
-			mV(menuVoption[0])
-		}
-	default:
-		if O {
-			menuId = 2
-		}
-	}
-	hostkey := ""
-	if len(KnownKeys) > 0 {
-		hostkey = " -hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
-	}
-	sA := ""
-	if A {
-		sA = " -A"
-	}
-	items := []func(index int) string{}
-	items = append(items, func(index int) string {
-		if index > -1 {
-			return fmt.Sprintf(`%d) %s%s %s`, index+1, quote(Exe), sA, title)
-		}
-		mPS(con)
-		return ""
-	})
-	items = append(items, func(index int) string {
-		if index >= 1 {
-			return fmt.Sprintf(`%d) %s%s %s%s`, index+1, quote(Fns[KITTY]), sA, title, hostkey)
-		}
-		mO(title, user, host, port, false)
-		return ""
-	})
-	if OpenSSH != "" {
-		items = append(items, func(index int) string {
-			if index > -1 {
-				return fmt.Sprintf(`%d) %s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, index+1, quote(OpenSSH), sA, user, host, port, KnownHosts)
-			}
-			mO(title, user, host, port, true)
-			return ""
-		})
-	}
-	for _, opt := range menuVoption {
-		items = append(items, func(index int) string {
-			if index > -1 {
-				return fmt.Sprintf("%d) %s", index+1, opt)
-			}
-			mV(opt)
-			return ""
-		})
-	}
-	for _, opt := range MenuToption {
-		items = append(items, func(index int) string {
-			if index > -1 {
-				return fmt.Sprintf("%d) %s", index+1, opt)
-			}
-			tty(parseHPHP(opt, RFC2217)...)
-			return ""
-		})
-	}
-	d := rune('1' + menuId)
-	hit := menuId > 0
-	menu(func(index int, d rune) string { return MENU }, d, hit, false, true, items...)
+	menu(prompt, MARK, d, count == 1, true, items...)
 }
 
 func quote(s string) string {
@@ -213,92 +193,6 @@ func quote(s string) string {
 		return fmt.Sprintf(`"%s"`, s)
 	}
 	return s
-}
-
-func menu(prompt func(index int, d rune) string, d rune, keyEnter, once, exitOnTypo bool, items ...func(index int) string) {
-	var (
-		key   keyboard.Key
-		err   error
-		r     rune
-		index int
-	)
-	for {
-		// Print menu
-		fmt.Println()
-		newD := false // search GT
-		for i, item := range items {
-			s := item(i) //get menu item
-			if len(s) < 1 {
-				continue
-			}
-			newD = strings.HasPrefix(s, GT)
-			if newD {
-				if len(s) < 2 {
-					continue
-				}
-				s = s[1:]
-				d = []rune(s)[0]
-			}
-		}
-		for i, item := range items { //print menu
-			s := item(i) //get menu item
-			if len(s) < 1 {
-				continue
-			}
-			mark := " "
-			if strings.HasPrefix(s, GT) { // new d
-				if len(s) < 2 {
-					continue
-				}
-				mark = GT
-				s = s[1:]
-			}
-			if d == []rune(s)[0] {
-				mark = Gt
-			}
-			fmt.Printf("%s%s\n", mark, s)
-		}
-		fmt.Print(prompt(index, d), Gt)
-		if keyEnter {
-			r = d
-		} else {
-			r, key, err = keyboard.GetSingleKey()
-			if err != nil {
-				fmt.Println(Bug)
-				return
-			}
-			if key == keyboard.KeyEnter {
-				r = d
-			}
-		}
-		keyEnter = false
-		d = r
-		fmt.Printf("%c\n", d)
-		ok := false
-	doit:
-		for i, item := range items {
-			s := item(i) //get menu item
-			if len(s) < 1 {
-				continue
-			}
-			if strings.HasPrefix(s, GT) { //ignore GT from item
-				if len(s) < 2 {
-					continue
-				}
-				s = s[1:]
-			}
-			ok = d == []rune(s)[0]
-			if ok {
-				if item(-1) == "exit" || once { // run func of menu item
-					return
-				}
-				break doit
-			}
-		}
-		if exitOnTypo && !ok {
-			return
-		}
-	}
 }
 
 func mPS(con *sshlib.Connect) {

@@ -107,7 +107,7 @@ func tty(hphp ...string) {
 		return kiRun(index, B9600)
 	})
 
-	menu(func(index int, d rune) string {
+	menu(func(i int, d rune) string {
 		if Delay != DELAY {
 			return "Choose baud and seconds delay for Ctrl-F2 or commands from clipboard\n" +
 				"Выбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера"
@@ -115,13 +115,13 @@ func tty(hphp ...string) {
 		return "Choose baud and seconds delay for Ctrl-F2\n" +
 			"Выбери скорость и задержку в секундах для Ctrl-F2"
 	},
-		'9', actual(flag.CommandLine, Baud), false, true, items...)
+		MARK, '9', actual(flag.CommandLine, Baud), true, items...)
 }
 
 func setDelay(index int, d string) string {
 	mark := ""
 	if Delay == d {
-		mark = GT
+		mark = string(MARK)
 	}
 	if index > -1 {
 		return fmt.Sprintf(`%s%d) %s`, mark, index, d)
@@ -133,7 +133,7 @@ func setDelay(index int, d string) string {
 func kiRun(index int, b string) string {
 	mark := ""
 	if Baud == b {
-		mark = GT
+		mark = string(MARK)
 	}
 	if index > -1 {
 		return fmt.Sprintf(`%s%d) %s`, mark, index, b)

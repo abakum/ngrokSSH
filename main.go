@@ -42,6 +42,7 @@ import (
 	"github.com/Desuuuu/windrive"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
+	"github.com/eiannone/keyboard"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
 	"github.com/xlab/closer"
@@ -79,6 +80,7 @@ const (
 	SOCKS5          = "1080"
 	HTTPX           = "3128"
 	B9600           = "9600"
+	MARK            = '(' // '✅'
 )
 
 var (
@@ -414,7 +416,7 @@ func main() {
 		if len(items) > 0 {
 			VisitAll("")
 			li.Println("Local mode of serial console - Локальный режим последовательной консоли")
-			menu(func(index int, d rune) string { return MENU }, '1', len(items) == 1, false, true, items...)
+			menu(prompt, MARK, '1', len(items) == 1, true, items...)
 		}
 	}
 
@@ -454,6 +456,10 @@ func main() {
 		winssh.KidsDone(os.Getpid())
 		time.Sleep(TOR)
 	}
+}
+
+func prompt(index int, d rune) string {
+	return MENU
 }
 
 func psCount(name, parent string, ppid int) (count int) {
@@ -749,4 +755,129 @@ type BasicUI struct {
 	Reader      io.Reader
 	Writer      io.Writer
 	ErrorWriter io.Writer
+}
+
+func menu(prompt func(index int, def rune) string, mark, def rune, keyEnter, exitOnTypo bool, items ...func(index int) string) {
+	const runFunc = -1
+	var (
+		key   keyboard.Key
+		err   error
+		r     rune
+		index = -1
+	)
+	for {
+		// Print menu
+		fmt.Println()
+		newD := false // search mark or set GT by index
+		for i, item := range items {
+			rs := []rune(item(i)) //get menu item
+			if len(rs) < 1 {
+				continue
+			}
+			newD = rs[0] == mark
+			if newD {
+				if len(rs) < 2 {
+					continue
+				}
+				rs = rs[1:]
+			}
+			if index > -1 {
+				if index == i {
+					def = rs[0]
+				}
+			} else {
+				if newD {
+					def = rs[0]
+				}
+			}
+		}
+
+		index = -1
+		for i, item := range items { //print menu
+			rs := []rune(item(i)) //get menu item
+			if len(rs) < 1 {
+				continue
+			}
+			m := " "
+			if rs[0] == mark { // new d
+				if len(rs) < 2 {
+					continue
+				}
+				m = string(mark)
+				rs = rs[1:]
+			}
+			if def == rs[0] {
+				m = Gt
+				index = i
+			}
+			fmt.Printf("%s%s\n", m, string(rs))
+		}
+		fmt.Print(prompt(index, def), Gt)
+		if keyEnter {
+			r = def
+		} else {
+			r, key, err = keyboard.GetSingleKey()
+			if err != nil {
+				fmt.Println(Bug)
+				return
+			}
+			if key == keyboard.KeyEnter {
+				r = def
+			}
+		}
+		keyEnter = false
+		def = r
+		if r == 0 {
+			fmt.Printf("0x%X\n", key)
+			switch key {
+			case keyboard.KeyHome:
+				index = 0
+				continue
+			case keyboard.KeyArrowUp:
+				if index == 0 {
+					index = len(items) - 1
+				} else {
+					index--
+				}
+				continue
+			case keyboard.KeyEnd:
+				index = len(items) - 1
+				continue
+			case keyboard.KeyArrowDown:
+				if index == len(items)-1 {
+					index = 0
+				} else {
+					index++
+				}
+				continue
+			}
+		} else {
+			fmt.Printf("%c\n", def)
+		}
+		index = -1
+		ok := false
+	doit:
+		for i, item := range items {
+			rs := []rune(item(i)) //get menu item
+			if len(rs) < 1 {
+				continue
+			}
+			if rs[0] == mark { //ignore mark from item
+				if len(rs) < 2 {
+					continue
+				}
+				rs = rs[1:]
+			}
+			ok = def == rs[0]
+			if ok {
+				if len(item(runFunc)) > 0 { // run func of menu item
+					return // for once selected menu
+				}
+				break doit
+			}
+		}
+		if exitOnTypo && !ok {
+			return
+		}
+	}
 }
