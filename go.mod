@@ -11,9 +11,8 @@ require (
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
 	github.com/abakum/proxy v0.0.6-lw
-	github.com/abakum/winssh v0.0.0-20240117134710-c1b722d897d3
+	github.com/abakum/winssh v0.0.0-20240122221534-be9e1422c408
 	github.com/blacknon/go-sshlib v0.1.10
-	github.com/dixonwille/wmenu/v5 v5.1.0
 	github.com/dolmen-go/contextio v1.0.0
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
@@ -38,9 +37,7 @@ require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/creack/goselect v0.1.2 // indirect
 	github.com/creack/pty v1.1.21 // indirect
-	github.com/daviddengcn/go-colortext v1.0.0 // indirect
 	github.com/dchest/bcrypt_pbkdf v0.0.0-20150205184540-83f37f9c154a // indirect
-	github.com/dixonwille/wlog/v3 v3.0.4 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/iamacarpet/go-winpty v1.0.4 // indirect
 	github.com/inconshreveable/log15 v3.0.0-testing.5+incompatible // indirect
@@ -52,7 +49,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/miekg/pkcs11 v1.1.1 // indirect
-	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.6 // indirect
 	github.com/thales-e-security/pool v0.0.2 // indirect

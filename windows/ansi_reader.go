@@ -38,26 +38,26 @@ func NewAnsiReader(nFile int) io.ReadCloser {
 	return NewAnsiReaderFile(file)
 }
 
-// NewAnsiReaderFile returns an io.ReadCloser that provides VT100 terminal emulation on top of a file
-func NewAnsiReaderFile(file *os.File) io.ReadCloser {
+// NewAnsiReaderFile returns an io.ReadCloser that provides VT100 terminal emulation on top of `src`
+func NewAnsiReaderFile(src *os.File) io.ReadCloser {
 	return &ansiReader{
-		file:    file,
-		fd:      file.Fd(),
+		file:    src,
+		fd:      src.Fd(),
 		command: make([]byte, 0, ansiterm.ANSI_MAX_CMD_LENGTH),
 		buffer:  make([]byte, 0),
 	}
 }
 
-// NewAnsiReaderDuplicateFile returns an io.ReadCloser that provides VT100 terminal emulation on top of a duplicate of a file
-// Usage:
-// stdin, err:=NewAnsiReaderDuplicateFile(os.Stdin)
+// NewAnsiReaderDuplicate returns an io.ReadCloser that provides VT100 terminal emulation on top of a duplicate of `src`
+//
+// stdin, err:=NewAnsiReaderDuplicate(os.Stdin)
 //
 //	if err!=nil{
 //		return err
 //	}
 //
 // defer stdin.Close()
-func NewAnsiReaderDuplicateFile(src *os.File) (io.ReadCloser, error) {
+func NewAnsiReaderDuplicate(src *os.File) (io.ReadCloser, error) {
 	duplicate, err := DuplicateFile(src)
 	if err != nil {
 		return nil, err
@@ -65,8 +65,9 @@ func NewAnsiReaderDuplicateFile(src *os.File) (io.ReadCloser, error) {
 	return NewAnsiReaderFile(duplicate), nil
 }
 
-// DuplicateFile create and return file as duplicate of src
-func DuplicateFile(src *os.File) (*os.File, error) {
+// DuplicateFile create and return file `trg` as duplicate of `src`
+// for `defer trg.Close()` even for os.Stdin
+func DuplicateFile(src *os.File) (trg *os.File, err error) {
 	var h windows.Handle
 	p := windows.CurrentProcess()
 	if err := windows.DuplicateHandle(p, windows.Handle(src.Fd()), p, &h, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {

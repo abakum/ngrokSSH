@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -9,19 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dixonwille/wmenu/v5"
 	"github.com/f1bonacc1/glippy"
 	"gopkg.in/ini.v1"
 )
 
 const (
 	KITTYINI = "kitty.ini"
-)
-
-var (
-	commandDelay = DELAY
-	ok           bool
-	opts         []string
 )
 
 // start hub4com then show menu for baud and delay
@@ -81,56 +75,82 @@ func tty(hphp ...string) {
 	Hub.Stdout = os.Stdout
 	Hub.Stderr = os.Stderr
 
-	for {
-		if Baud != "" {
-			opts = []string{
-				"-sercfg",
-				Baud,
-				"-serial",
-				"COM" + So,
-			}
-			Println("cmdFromClipBoard", command())
-			ki := exec.Command(Fns[KITTY], opts...)
+	items := []func(index int) string{}
+	items = append(items, func(index int) string {
+		return setDelay(index, DELAY)
+	})
+	items = append(items, func(index int) string {
+		return kiRun(index, "115200")
+	})
+	items = append(items, func(index int) string {
+		return setDelay(index, "0.2")
+	})
+	items = append(items, func(index int) string {
+		return kiRun(index, "38400")
+	})
+	items = append(items, func(index int) string {
+		return setDelay(index, "0.4")
+	})
+	items = append(items, func(index int) string {
+		return kiRun(index, "57600")
+	})
+	items = append(items, func(index int) string {
+		return setDelay(index, "0.6")
+	})
+	items = append(items, func(index int) string {
+		return setDelay(index, "0.7")
+	})
+	items = append(items, func(index int) string {
+		return setDelay(index, "0.08")
+	})
+	items = append(items, func(index int) string {
+		return kiRun(index, B9600)
+	})
 
-			ltf.Println(cmd("Run", ki))
-			Println(cmd("Close", ki), ki.Run())
+	menu(func(index int, d rune) string {
+		if Delay != DELAY {
+			return "Choose baud and seconds delay for Ctrl-F2 or commands from clipboard\n" +
+				"Выбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера"
 		}
-		menu := wmenu.NewMenu("Choose baud and seconds delay for Ctrl-F2 or commands from clipboard case delay>" + DELAY +
-			"\nВыбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера обмена если задержка>" + DELAY)
-		menu.Action(func(opts []wmenu.Opt) error {
-			for _, o := range opts {
-				if strings.HasPrefix(o.Text, "0") {
-					commandDelay = o.Text
-				} else {
-					Baud = o.Text
-				}
-			}
-			li.Println("baud", Baud)
-			li.Println("commandDelay", commandDelay)
-			return nil
-		})
-		menu.InitialIndex(0)
-		ok = false
-		menu.Option(tit(DELAY, commandDelay, false))
-		menu.Option(tit("115200", Baud, false))
-		menu.Option(tit("0.2", commandDelay, false))
-		menu.Option(tit("38400", Baud, false))
-		menu.Option(tit("0.4", commandDelay, false))
-		menu.Option(tit("57600", Baud, false))
-		menu.Option(tit("0.6", commandDelay, false))
-		menu.Option(tit("0.7", commandDelay, false))
-		menu.Option(tit("0.08", commandDelay, false))
-		menu.Option(tit("9600", Baud, Baud == ""))
+		return "Choose baud and seconds delay for Ctrl-F2\n" +
+			"Выбери скорость и задержку в секундах для Ctrl-F2"
+	},
+		'9', actual(flag.CommandLine, Baud), false, true, items...)
+}
 
-		if !ok {
-			// menu.Option(baud, 10, true, nil)
-			menu.Option(tit(Baud, Baud, false))
-		}
-		if menu.Run() != nil {
-			return
-		}
+func setDelay(index int, d string) string {
+	mark := ""
+	if Delay == d {
+		mark = GT
 	}
-	// closer.Hold()
+	if index > -1 {
+		return fmt.Sprintf(`%s%d) %s`, mark, index, d)
+	}
+	Delay = d
+	return ""
+}
+
+func kiRun(index int, b string) string {
+	mark := ""
+	if Baud == b {
+		mark = GT
+	}
+	if index > -1 {
+		return fmt.Sprintf(`%s%d) %s`, mark, index, b)
+	}
+	Baud = b
+	opts := []string{
+		"-sercfg",
+		Baud,
+		"-serial",
+		"COM" + So,
+	}
+	Println("cmdFromClipBoard", command(&opts))
+	ki := exec.Command(Fns[KITTY], opts...)
+
+	ltf.Println(cmd("Run", ki))
+	Println(cmd("Close", ki), ki.Run())
+	return ""
 }
 
 func kill() {
@@ -138,12 +158,6 @@ func kill() {
 		Println(cmd("Kill", Hub), Hub.Process.Kill())
 		// time.Sleep(time.Second)
 	}
-}
-
-func tit(t, def string, or bool) (title string, value interface{}, isDefault bool, function func(wmenu.Opt) error) {
-	isDefault = t == def || or
-	ok = ok || isDefault
-	return t, 0, isDefault, nil
 }
 
 func SetValue(section *ini.Section, key, val string) (set bool) {
@@ -155,7 +169,7 @@ func SetValue(section *ini.Section, key, val string) (set bool) {
 	return
 }
 
-func command() error {
+func command(opts *[]string) error {
 	ini.PrettyFormat = false
 	iniFile, err := ini.LoadSources(ini.LoadOptions{
 		IgnoreInlineComment: false,
@@ -164,14 +178,14 @@ func command() error {
 		return err
 	}
 	section := iniFile.Section("KiTTY")
-	ok := SetValue(section, "commanddelay", commandDelay)
+	ok := SetValue(section, "commanddelay", Delay)
 	if ok {
 		err = iniFile.SaveTo(Fns[KITTYINI])
 		if err != nil {
 			return err
 		}
 	}
-	if commandDelay == DELAY {
+	if Delay == DELAY {
 		return nil
 	}
 	text, err := glippy.Get()
@@ -194,7 +208,7 @@ func command() error {
 	if n != len(text) {
 		return fmt.Errorf("error write ClipBoard to %s", clip)
 	}
-	opts = append(opts,
+	*opts = append(*opts,
 		"-cmd",
 		clip,
 	)

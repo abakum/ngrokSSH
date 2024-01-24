@@ -25,6 +25,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -41,15 +42,12 @@ import (
 	"github.com/Desuuuu/windrive"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
-	"github.com/dixonwille/wmenu/v5"
-	"github.com/eiannone/keyboard"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
 	"github.com/xlab/closer"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 const (
@@ -80,6 +78,7 @@ const (
 	TOW             = time.Second * 5       //watch TO
 	SOCKS5          = "1080"
 	HTTPX           = "3128"
+	B9600           = "9600"
 )
 
 var (
@@ -154,79 +153,9 @@ var (
 	Once     sync.Once
 	pemBytes []byte
 	Bug      = "Ж"
-	States   [3]*term.State
+	Gt       = ">"
+	Delay    = DELAY
 )
-
-func statesGet() {
-	var err error
-	fd := os.Stdin.Fd()
-	States[0], err = term.GetState(int(fd))
-	Println(fd, States[0], err)
-
-	fd = os.Stdout.Fd()
-	States[1], err = term.GetState(int(fd))
-	Println(fd, States[1], err)
-
-	fd = os.Stderr.Fd()
-	States[2], err = term.GetState(int(fd))
-	Println(fd, States[2], err)
-}
-
-func statesSet() {
-	fd := os.Stdin.Fd()
-	Println(fd, States[0], term.Restore(int(fd), States[0]))
-
-	fd = os.Stdout.Fd()
-	Println(fd, States[1], term.Restore(int(fd), States[1]))
-
-	fd = os.Stderr.Fd()
-	Println(fd, States[2], term.Restore(int(fd), States[2]))
-}
-
-func statesPrint() {
-	fd := os.Stdin.Fd()
-	s, err := term.GetState(int(fd))
-	Println(fd, s, err)
-
-	fd = os.Stdout.Fd()
-	s, err = term.GetState(int(fd))
-	Println(fd, s, err)
-
-	fd = os.Stderr.Fd()
-	s, err = term.GetState(int(fd))
-	Println(fd, s, err)
-}
-
-func menu() {
-	if err := keyboard.Open(); err != nil {
-		return
-	}
-	defer func() {
-		_ = keyboard.Close()
-	}()
-	for {
-		fmt.Println()
-		fmt.Println(1)
-		fmt.Println(2)
-		fmt.Println(3)
-		fmt.Println(MENU)
-		char, key, err := keyboard.GetKey()
-		if err != nil {
-			return
-		}
-		switch char {
-		case '1':
-			mn()
-		case '2':
-			mn()
-		case '3':
-			mn()
-		default:
-			fmt.Printf("You pressed: rune %q, key %X\r\n", char, key)
-			return
-		}
-	}
-}
 
 func main() {
 	const (
@@ -253,23 +182,18 @@ func main() {
 		if ret {
 			if res == CGIR {
 				listenaddress, sshdExe := la(SSHD, 22)
-				// Println(listenaddress, sshdExe)
 				if listenaddress != "" {
 					sshd := strings.Split(sshdExe, ".")[0]
 					restart := exec.Command("net.exe",
 						"stop",
 						sshd,
 					)
-					// restart.Stdout = os.Stdout
-					// restart.Stderr = os.Stdout
 					Println(cmd("Run", restart), restart.Run())
 					time.Sleep(TOW + time.Second)
 					restart = exec.Command("net.exe",
 						"start",
 						sshd,
 					)
-					// restart.Stdout = os.Stdout
-					// restart.Stderr = os.Stdout
 					Println(cmd("Run", restart), restart.Run())
 				}
 				Println(ngrokRestart(NgrokApiKey))
@@ -364,7 +288,7 @@ func main() {
 	}
 
 	flag.BoolVar(&a, "a", a, fmt.Sprintf("`ansi` sequence enabled console - консоль поддерживает ansi последовательности\nexample - пример `%s -a` or `%s -a=false`", Image, Image))
-	flag.StringVar(&Baud, "b", "", fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 9600` or `%s -b 9`", Image, Image))
+	flag.StringVar(&Baud, "b", B9600, fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 115200` or `%s -b 1`", Image, Image))
 	flag.BoolVar(&h, "h", h, fmt.Sprintf("show `help` for usage - показать использование параметров\nexample - пример `%s -h`", Image))
 	flag.StringVar(&Ln, "l", "", fmt.Sprintf("`login` name as `ssh -l ln`\nexample - пример `%s -l root 192.168.0.1:2222` or `%s root@192.168.0.1:2222`", Image, Image))
 	flag.BoolVar(&n, "n", false, fmt.Sprintf("do not use `ngrok` for dial - использовать режим LAN\nexample - пример `%s -n` or `%s .`", Image, Image))
@@ -396,11 +320,11 @@ func main() {
 			case 5:
 				Baud = "57600"
 			case 9:
-				Baud = "9600"
+				Baud = B9600
 			}
 		} else {
 			Println(i, err)
-			Baud = ""
+			Baud = B9600
 		}
 	}
 	if !actual(flag.CommandLine, "p") {
@@ -471,40 +395,26 @@ func main() {
 	// for serial console need So!=""
 	// `choco install com0com`
 	if So != "" && !dial {
+		items := []func(index int) string{}
 		for _, opt := range T {
 			hphp := parseHPHP(opt, RFC2217)
 			p, err := strconv.Atoi(hphp[1])
 			// is hub4com running local?
 			if err == nil && isListen(hphp[0], p, 0) {
 				//hub4com running local
-				MenuToption = append(MenuToption, strings.Join(hphp, ":"))
-			}
-			if len(MenuToption) > 0 {
-				VisitAll("")
-				li.Println("Local mode of serial console - Локальный режим последовательной консоли")
-				if len(MenuToption) == 1 {
-					tty(parseHPHP(MenuToption[0], RFC2217)...)
-					return
-				}
-				for {
-					fmt.Println()
-					menuT := wmenu.NewMenu(MENU)
-					menuT.Action(func(opts []wmenu.Opt) error {
-						for _, opt := range opts {
-							MenuTid = opt.ID
-							tty(parseHPHP(opt.Text, RFC2217)...)
-							return nil
-						}
-						return nil
-					})
-					for i, opt := range MenuToption {
-						menuT.Option(opt, nil, i == MenuTid, nil)
+				items = append(items, func(index int) string {
+					if index > -1 {
+						return fmt.Sprintf("%d) %s", index, strings.Join(hphp, ":"))
 					}
-					if menuT.Run() != nil {
-						return
-					}
-				}
+					tty(hphp...)
+					return ""
+				})
 			}
+		}
+		if len(items) > 0 {
+			VisitAll("")
+			li.Println("Local mode of serial console - Локальный режим последовательной консоли")
+			menu(func(index int, d rune) string { return MENU }, '1', len(items) == 1, false, true, items...)
 		}
 	}
 
@@ -611,7 +521,7 @@ func cmd(s string, c *exec.Cmd) string {
 	if c == nil {
 		return ""
 	}
-	return fmt.Sprintf(`%s "%s" %s`, s, c.Args[0], strings.Join(c.Args[1:], " "))
+	return fmt.Sprintf(`%s>%s %s`, s, quote(c.Args[0]), strings.Join(c.Args[1:], " "))
 }
 
 func actual(fs *flag.FlagSet, fn string) bool {
@@ -833,4 +743,10 @@ func RealReset() {
 		Println("RealSet", "", "")
 		return
 	}
+}
+
+type BasicUI struct {
+	Reader      io.Reader
+	Writer      io.Writer
+	ErrorWriter io.Writer
 }

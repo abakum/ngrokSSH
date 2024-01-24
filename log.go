@@ -6,7 +6,6 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"runtime/debug"
 	"strings"
 
 	"github.com/mitchellh/go-ps"
@@ -17,6 +16,8 @@ const (
 	ansiReset     = "\u001B[0m"
 	ansiRedBGBold = "\u001B[41m\u001B[1m"
 	BUG           = "Ж"
+	ansiGreenFG   = "\u001B[32m\u001B[1m"
+	GT            = ">"
 )
 
 var (
@@ -29,9 +30,11 @@ var (
 
 // color for ansi enabled console
 func SetPrefix(a bool) {
-	Bug := BUG
+	Bug = BUG
+	Gt = GT
 	if a {
 		Bug = ansiRedBGBold + BUG + ansiReset
+		Gt = ansiGreenFG + GT + ansiReset
 	}
 	letf.SetPrefix(Bug)
 	let.SetPrefix(Bug)
@@ -59,24 +62,7 @@ func isAnsi() (ok bool) {
 }
 
 // Get source of code
-func src(deep int) (s string) {
-	s = string(debug.Stack())
-	str := strings.Split(s, "\n")
-	if l := len(str); l <= deep {
-		deep = l - 1
-		for k, v := range str {
-			fmt.Println(k, v)
-		}
-	}
-	s = str[deep]
-	s = strings.Split(s, " +0x")[0]
-	_, s = path.Split(s)
-	s += ":"
-	return
-}
-
-// Get source of code
-func src_(depth int) (s string) {
+func src(depth int) (s string) {
 	pc := make([]uintptr, 1)
 	n := runtime.Callers(depth-5, pc)
 	if n > 0 {

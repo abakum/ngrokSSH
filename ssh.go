@@ -19,7 +19,7 @@ import (
 	"github.com/abakum/pageant"
 	"github.com/abakum/proxy"
 	"github.com/blacknon/go-sshlib"
-	"github.com/dixonwille/wmenu/v5"
+	"github.com/eiannone/keyboard"
 	termm "github.com/moby/term"
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
@@ -40,7 +40,7 @@ func client(user, host, port, listenAddress string) {
 		sock        net.Conn
 		signers     []ssh.Signer
 		menuVoption []string
-		menuVid     = 0
+		menuId      = 0
 		err         error
 	)
 	title := fmt.Sprintf("%s@%s:%s", user, host, port)
@@ -123,22 +123,18 @@ func client(user, host, port, listenAddress string) {
 	}
 
 	ska(con)
-	o := 0
-	aa := true || a
-	if aa {
-		o++
-	}
+	o := 1
 	if OpenSSH != "" {
 		o++
 	}
 	switch {
 	case actual(flag.CommandLine, "T") || actual(flag.CommandLine, "b"):
-		menuVid = len(menuVoption) + 1 + o
+		menuId = len(menuVoption) + 1 + o
 		if len(MenuToption) == 1 {
 			tty(parseHPHP(MenuToption[0], RFC2217)...)
 		}
 	case actual(flag.CommandLine, "V"):
-		menuVid = 1 + o
+		menuId = 1 + o
 		opts := []string{GEOMETRY}
 		if psCount(REALVAB, "", 0) == 0 {
 			opts = append(opts,
@@ -153,11 +149,8 @@ func client(user, host, port, listenAddress string) {
 			mV(menuVoption[0])
 		}
 	default:
-		if aa {
-			menuVid++
-		}
 		if O {
-			menuVid++
+			menuId = 2
 		}
 	}
 	hostkey := ""
@@ -168,60 +161,144 @@ func client(user, host, port, listenAddress string) {
 	if A {
 		sA = " -A"
 	}
-	m0 := fmt.Sprintf(`"%s"%s %s%s`, Fns[KITTY], sA, title, hostkey)
-	m1 := fmt.Sprintf(`"%s"%s %s`, Exe, sA, title)
-	mo := fmt.Sprintf(`"%s"%s %s@%s -p %s -o UserKnownHostsFile="%s"`, OpenSSH, sA, user, host, port, KnownHosts)
-	Println(m0, m1, mo)
-	for {
-		fmt.Println()
-		menuV := wmenu.NewMenu(MENU)
-		menuV.Action(func(opts []wmenu.Opt) error {
-			for _, opt := range opts {
-				menuVid = opt.ID
-				switch {
-				case menuVid < 1+o:
-					if aa && menuVid == 1 {
-						// mn()
-						mPS(con)
-					} else {
-						mO(title, user, host, port, menuVid > 0)
-					}
-					return nil
-				case menuVid > len(menuVoption)+o:
-					tty(parseHPHP(opt.Text, RFC2217)...)
-					return nil
-				default:
-					mV(opt.Text)
-					return nil
-				}
+	items := []func(index int) string{}
+	items = append(items, func(index int) string {
+		if index > -1 {
+			return fmt.Sprintf(`%d) %s%s %s`, index+1, quote(Exe), sA, title)
+		}
+		mPS(con)
+		return ""
+	})
+	items = append(items, func(index int) string {
+		if index >= 1 {
+			return fmt.Sprintf(`%d) %s%s %s%s`, index+1, quote(Fns[KITTY]), sA, title, hostkey)
+		}
+		mO(title, user, host, port, false)
+		return ""
+	})
+	if OpenSSH != "" {
+		items = append(items, func(index int) string {
+			if index > -1 {
+				return fmt.Sprintf(`%d) %s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, index+1, quote(OpenSSH), sA, user, host, port, KnownHosts)
 			}
-			return nil
+			mO(title, user, host, port, true)
+			return ""
 		})
-		menuV.Option(m0, nil, menuVid == 0, nil)
-		if aa {
-			menuV.Option(m1, nil, menuVid == 1, nil)
-		}
-		if OpenSSH != "" {
-			menuV.Option(mo, nil, menuVid == o, nil)
-		}
-		for i, opt := range append(menuVoption, MenuToption...) {
-			menuV.Option(opt, nil, menuVid == i+1+o, nil)
-		}
-		// statesSet()
-		if menuV.Run() != nil {
-			return
-		}
-		// 	statesPrint()
-		// 	menuV = nil
 	}
+	for _, opt := range menuVoption {
+		items = append(items, func(index int) string {
+			if index > -1 {
+				return fmt.Sprintf("%d) %s", index+1, opt)
+			}
+			mV(opt)
+			return ""
+		})
+	}
+	for _, opt := range MenuToption {
+		items = append(items, func(index int) string {
+			if index > -1 {
+				return fmt.Sprintf("%d) %s", index+1, opt)
+			}
+			tty(parseHPHP(opt, RFC2217)...)
+			return ""
+		})
+	}
+	d := rune('1' + menuId)
+	hit := menuId > 0
+	menu(func(index int, d rune) string { return MENU }, d, hit, false, true, items...)
 }
 
-func mn() {
-	shell := exec.Command("cmd")
-	// shell.Stdin, shell.Stdout, shell.Stderr = termm.StdStreams()
-	shell.Stdin, shell.Stdout, shell.Stderr = os.Stdin, os.Stdout, os.Stdout
-	fmt.Println(cmd("Run", shell))
-	fmt.Println(cmd("Stop", shell), shell.Run())
+func quote(s string) string {
+	if strings.Contains(s, " ") {
+		return fmt.Sprintf(`"%s"`, s)
+	}
+	return s
+}
+
+func menu(prompt func(index int, d rune) string, d rune, keyEnter, once, exitOnTypo bool, items ...func(index int) string) {
+	var (
+		key   keyboard.Key
+		err   error
+		r     rune
+		index int
+	)
+	for {
+		// Print menu
+		fmt.Println()
+		newD := false // search GT
+		for i, item := range items {
+			s := item(i) //get menu item
+			if len(s) < 1 {
+				continue
+			}
+			newD = strings.HasPrefix(s, GT)
+			if newD {
+				if len(s) < 2 {
+					continue
+				}
+				s = s[1:]
+				d = []rune(s)[0]
+			}
+		}
+		for i, item := range items { //print menu
+			s := item(i) //get menu item
+			if len(s) < 1 {
+				continue
+			}
+			mark := " "
+			if strings.HasPrefix(s, GT) { // new d
+				if len(s) < 2 {
+					continue
+				}
+				mark = GT
+				s = s[1:]
+			}
+			if d == []rune(s)[0] {
+				mark = Gt
+			}
+			fmt.Printf("%s%s\n", mark, s)
+		}
+		fmt.Print(prompt(index, d), Gt)
+		if keyEnter {
+			r = d
+		} else {
+			r, key, err = keyboard.GetSingleKey()
+			if err != nil {
+				fmt.Println(Bug)
+				return
+			}
+			if key == keyboard.KeyEnter {
+				r = d
+			}
+		}
+		keyEnter = false
+		d = r
+		fmt.Printf("%c\n", d)
+		ok := false
+	doit:
+		for i, item := range items {
+			s := item(i) //get menu item
+			if len(s) < 1 {
+				continue
+			}
+			if strings.HasPrefix(s, GT) { //ignore GT from item
+				if len(s) < 2 {
+					continue
+				}
+				s = s[1:]
+			}
+			ok = d == []rune(s)[0]
+			if ok {
+				if item(-1) == "exit" || once { // run func of menu item
+					return
+				}
+				break doit
+			}
+		}
+		if exitOnTypo && !ok {
+			return
+		}
+	}
 }
 
 func mPS(con *sshlib.Connect) {
@@ -608,26 +685,6 @@ func setupShell(c *sshlib.Connect) (err error) {
 	c.Session.Stdin = c.Stdin
 	c.Session.Stdout = c.Stdout
 	c.Session.Stderr = c.Stderr
-	// w, e := c.Session.StdinPipe()
-	// if e == nil {
-	// 	go io.Copy(w, c.Stdin)
-	// } else {
-	// 	c.Session.Stdin = sshlib.GetStdin()
-	// }
-
-	// or, e := c.Session.StdoutPipe()
-	// if e == nil {
-	// 	go io.Copy(c.Stdout, or)
-	// } else {
-	// 	c.Session.Stdout = os.Stdout
-	// }
-
-	// er, e := c.Session.StderrPipe()
-	// if e == nil {
-	// 	go io.Copy(c.Stderr, er)
-	// } else {
-	// 	c.Session.Stderr = os.Stderr
-	// }
 
 	// Request tty
 	err = sshlib.RequestTty(c.Session)
@@ -653,7 +710,6 @@ func setupShell(c *sshlib.Connect) (err error) {
 }
 
 // Shell connect login shell over ssh.
-// like Command
 func Shell(c *sshlib.Connect) (err error) {
 	if c.Session == nil {
 		c.Session, err = c.CreateSession()
@@ -687,7 +743,7 @@ func Shell(c *sshlib.Connect) (err error) {
 	// c.Stdin, c.Stdout, c.Stderr = termm.StdStreams()
 	_, c.Stdout, c.Stderr = termm.StdStreams()
 
-	stdin, err := windowsconsole.NewAnsiReaderDuplicateFile(os.Stdin)
+	stdin, err := windowsconsole.NewAnsiReaderDuplicate(os.Stdin)
 	if err != nil {
 		return
 	}
@@ -715,8 +771,6 @@ func Shell(c *sshlib.Connect) (err error) {
 	go c.SendKeepAlive(c.Session)
 
 	err = c.Session.Wait()
-	// c.Stdin = new(bytes.Buffer)
-	// c.Session.Stdin = new(bytes.Buffer)
 	return
 }
 
