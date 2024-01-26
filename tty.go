@@ -77,6 +77,9 @@ func tty(hphp ...string) {
 	Hub.Stderr = os.Stderr
 
 	items := []menu.MenuFunc{func(index int, pressed rune) string {
+		if index == -1 {
+			return menu.SELECT
+		}
 		if Delay != DELAY {
 			return "Choose baud and seconds delay for Ctrl-F2 or commands from clipboard\n" +
 				"Выбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера"
@@ -121,30 +124,30 @@ func tty(hphp ...string) {
 func setDelay(index int, pressed rune, d string) string {
 	r := rune('0' + index)
 	switch pressed {
-	case menu.MARKED: // marked
+	case menu.MARKED:
 		if Delay == d {
 			return menu.MARK
 		}
-	case menu.ITEM: // item of menu
-		return fmt.Sprintf(`%c) %s`, r, d)
+	case menu.ITEM:
+		return fmt.Sprintf("%c) %s", r, d)
 	case r:
-		Delay = d // run
+		Delay = d
 		return string(r)
 	}
-	return "" // not for me
+	return ""
 }
 
 func kiRun(index int, pressed rune, b string) string {
 	r := rune('0' + index)
 	switch pressed {
-	case menu.MARKED: // marked
+	case menu.MARKED:
 		if Baud == b {
 			return menu.MARK
 		}
-	case menu.ITEM: // item of menu
+	case menu.ITEM:
 		return fmt.Sprintf(`%c) %s`, r, b)
 	case r:
-		Baud = b // run
+		Baud = b
 		opts := []string{
 			"-sercfg",
 			Baud,
@@ -158,13 +161,12 @@ func kiRun(index int, pressed rune, b string) string {
 		Println(cmd("Close", ki), ki.Run())
 		return string(r)
 	}
-	return "" // not for me
+	return ""
 }
 
 func kill() {
 	if Hub.Process != nil {
 		Println(cmd("Kill", Hub), Hub.Process.Kill())
-		// time.Sleep(time.Second)
 	}
 }
 
@@ -221,4 +223,16 @@ func command(opts *[]string) error {
 		clip,
 	)
 	return nil
+}
+
+func ttyMenu(index int, pressed rune, hphp ...string) string {
+	r := rune('1' + index)
+	switch pressed {
+	case r:
+		tty(hphp...)
+		return string(r)
+	case menu.ITEM:
+		return fmt.Sprintf("%c) %s", r, strings.Join(hphp, ":"))
+	}
+	return ""
 }

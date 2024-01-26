@@ -191,17 +191,8 @@ func client(user, host, port, listenAddress string) {
 			if e != nil {
 				continue
 			}
-			opt := strings.Join(hphp, ":")
 			items = append(items, func(index int, pressed rune) string {
-				r := rune('1' + index)
-				switch pressed {
-				case menu.ITEM: // item of menu
-					return fmt.Sprintf(`%c) %s`, r, opt)
-				case r:
-					tty(parseHPHP(opt, RFC2217)...) // run
-					return string(r)                //new def
-				}
-				return "" // not for me
+				return ttyMenu(index, pressed, hphp...)
 			})
 		}
 	}

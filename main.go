@@ -406,15 +406,7 @@ func main() {
 			if err == nil && isListen(hphp[0], p, 0) {
 				//hub4com running local
 				items = append(items, func(index int, pressed rune) string {
-					r := rune('1' + index)
-					switch pressed {
-					case menu.ITEM: // item of menu
-						return fmt.Sprintf("%c) %s", r, strings.Join(hphp, ":"))
-					case r:
-						tty(hphp...)     // run
-						return string(r) //new def
-					}
-					return "" // not for me
+					return ttyMenu(index, pressed, hphp...)
 				})
 			}
 		}
