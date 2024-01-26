@@ -118,7 +118,7 @@ func tty(hphp ...string) {
 		return kiRun(index, pressed, B9600)
 	})
 
-	menu.Menu('9', actual(flag.CommandLine, Baud), true, items...)
+	menu.Menu(0, actual(flag.CommandLine, "b"), true, items...)
 }
 
 func setDelay(index int, pressed rune, d string) string {

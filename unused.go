@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"path"
-	"runtime/debug"
-	"strings"
 
 	windowsconsole "github.com/moby/term/windows"
 	"golang.org/x/sys/windows"
@@ -29,21 +26,4 @@ func GetStdout() io.Writer {
 	stdout := windowsconsole.NewAnsiWriter(int(h))
 
 	return stdout
-}
-
-// Get source of code
-func src_(deep int) (s string) {
-	s = string(debug.Stack())
-	str := strings.Split(s, "\n")
-	if l := len(str); l <= deep {
-		deep = l - 1
-		for k, v := range str {
-			fmt.Println(k, v)
-		}
-	}
-	s = str[deep]
-	s = strings.Split(s, " +0x")[0]
-	_, s = path.Split(s)
-	s += ":"
-	return
 }

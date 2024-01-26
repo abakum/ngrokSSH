@@ -398,7 +398,7 @@ func main() {
 	// `choco install com0com`
 	if So != "" && !dial {
 		// items := []func(index int) string{}
-		items := []menu.MenuFunc{Prompt}
+		items := []menu.MenuFunc{menu.Static(MENU).Prompt}
 		for _, opt := range T {
 			hphp := parseHPHP(opt, RFC2217)
 			p, err := strconv.Atoi(hphp[1])
@@ -453,10 +453,6 @@ func main() {
 		winssh.KidsDone(os.Getpid())
 		time.Sleep(TOR)
 	}
-}
-
-func prompt(index int, d rune) string {
-	return MENU
 }
 
 func psCount(name, parent string, ppid int) (count int) {
@@ -746,8 +742,4 @@ func RealReset() {
 		Println("RealSet", "", "")
 		return
 	}
-}
-
-func Prompt(int, rune) string {
-	return MENU
 }

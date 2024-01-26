@@ -71,23 +71,16 @@ func client(user, host, port, listenAddress string) {
 	// menu
 	d := '1'
 	count := 0
-	// items := []func(index int) string{}
-	items := []menu.MenuFunc{Prompt}
+	items := []menu.MenuFunc{menu.Static(MENU).Prompt}
 
 	sA := ""
 	if A {
 		sA = " -A"
 	}
 	items = append(items, func(index int, pressed rune) string {
-		r := rune('1' + index)
-		switch pressed {
-		case menu.ITEM: // item of menu
-			return fmt.Sprintf(`%c) %s%s %s`, r, quote(Exe), sA, title)
-		case r:
-			mPS(con)         // run
-			return string(r) //new def
-		}
-		return "" // not for me
+		return shellMenu(index, pressed,
+			quote(Exe)+sA+" "+title,
+			con)
 	})
 
 	hostkey := ""
@@ -95,15 +88,9 @@ func client(user, host, port, listenAddress string) {
 		hostkey = " -hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
 	}
 	items = append(items, func(index int, pressed rune) string {
-		r := rune('1' + index)
-		switch pressed {
-		case menu.ITEM: // item of menu
-			return fmt.Sprintf(`%c) %s%s %s%s`, r, quote(Fns[KITTY]), sA, title, hostkey)
-		case r:
-			mO(title, user, host, port, false) // run
-			return string(r)                   //new def
-		}
-		return "" // not for me
+		return mOMenu(index, pressed,
+			quote(Fns[KITTY])+sA+" "+title+hostkey,
+			title, user, host, port, false)
 	})
 
 	if OpenSSH != "" {
@@ -112,38 +99,36 @@ func client(user, host, port, listenAddress string) {
 			count++
 		}
 		items = append(items, func(index int, pressed rune) string {
-			r := rune('1' + index)
-			switch pressed {
-			case menu.ITEM: // item of menu
-				return fmt.Sprintf(`%c) %s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, r, quote(OpenSSH), sA, user, host, port, KnownHosts)
-			case r:
-				mO(title, user, host, port, true) // run
-				return string(r)                  //new def
-			}
-			return "" // not for me
+			return mOMenu(index, pressed,
+				fmt.Sprintf(`%s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, port, KnownHosts),
+				title, user, host, port, true)
 		})
 	}
 
 	if actual(flag.CommandLine, "V") {
 		d = rune('1'+len(items)) - 1
 		count++
+		opts := []string{GEOMETRY}
+		if psCount(REALVAB, "", 0) == 0 {
+			opts = append(opts,
+				"-ViewerPath="+Exe,
+				"-MinimiseToTray=0",
+				"-AddressBook="+Fns[AB],
+			)
+		}
+		vab := exec.Command(Fns[REALVAB], opts...)
+		Println(cmd("Start", vab), vab.Start())
 	}
+
 	for _, o := range V {
 		hphp, e := cgi(con, Image+" "+CGIV, o, RFB)
 		if e != nil {
 			continue
 		}
-		opt := strings.Join(hphp, ":")
+		// opt := strings.Join(hphp, ":")
 		items = append(items, func(index int, pressed rune) string {
-			r := rune('1' + index)
-			switch pressed {
-			case menu.ITEM: // item of menu
-				return fmt.Sprintf(`%c) %s`, r, opt)
-			case r:
-				mV(opt)          // run
-				return string(r) //new def
-			}
-			return "" // not for me
+			return mV(index, pressed,
+				strings.Join(hphp, ":"))
 		})
 	}
 
@@ -208,26 +193,54 @@ func quote(s string) string {
 	return s
 }
 
-func mPS(con *sshlib.Connect) {
-	Shell(con)
+func shellMenu(index int, pressed rune, suf string, con *sshlib.Connect) string {
+	r := rune('1' + index)
+	switch pressed {
+	case r:
+		Shell(con)
+		return string(r)
+	case menu.ITEM:
+		return fmt.Sprintf("%c) %s", r, suf)
+	}
+	return ""
 }
 
-func mV(opt string) {
-	vvO := []string{
-		"-ChangeServerDefaultPrinter=0",
-		"-EnableChat=0",
-		"-Scaling=None",
-		"-SecurityNotificationTimeout=0",
-		"-ShareFiles=0",
-		"-UserName=",
-		"-VerifyId=0",
-		"-WarnUnencrypted=0",
-		"-SingleSignOn=0",
-		"-ProxyServer=",
+func mV(index int, pressed rune, opt string) string {
+	r := rune('1' + index)
+	switch pressed {
+	case r:
+		vvO := []string{
+			"-ChangeServerDefaultPrinter=0",
+			"-EnableChat=0",
+			"-Scaling=None",
+			"-SecurityNotificationTimeout=0",
+			"-ShareFiles=0",
+			"-UserName=",
+			"-VerifyId=0",
+			"-WarnUnencrypted=0",
+			"-SingleSignOn=0",
+			"-ProxyServer=",
+		}
+		hphp := parseHPHP(opt, RFB)
+		vv := exec.Command(RealVV, append(vvO, net.JoinHostPort(hphp[0], hphp[1]))...)
+		Println(cmd("Start", vv), vv.Start())
+		return string(r)
+	case menu.ITEM:
+		return fmt.Sprintf("%c) %s", r, opt)
 	}
-	hphp := parseHPHP(opt, RFB)
-	vv := exec.Command(RealVV, append(vvO, net.JoinHostPort(hphp[0], hphp[1]))...)
-	Println(cmd("Start", vv), vv.Start())
+	return ""
+}
+
+func mOMenu(index int, pressed rune, suf, title, user, host, port string, O bool) string {
+	r := rune('1' + index)
+	switch pressed {
+	case r:
+		mO(title, user, host, port, O)
+		return string(r)
+	case menu.ITEM:
+		return fmt.Sprintf("%c) %s", r, suf)
+	}
+	return ""
 }
 
 func mO(title, user, host, port string, O bool) {
