@@ -1,6 +1,6 @@
 /*
 git clone https://github.com/abakum/ngrokSSH
-go mod init github.com/abakum/ngrokSSH@latest
+go mod init github.com/abakum/ngrokSSH
 go get github.com/abakum/go-console@latest
 go get github.com/abakum/winssh@latest
 go get github.com/abakum/go-netstat@latest
@@ -9,12 +9,11 @@ go get github.com/abakum/menu@latest
 
 go get github.com/gliderlabs/ssh
 go get github.com/pkg/sftp
-go get golang.ngrok.com/ngrok@latest
+go get golang.ngrok.com/ngrok@v1.7.0
 go get github.com/ngrok/ngrok-api-go/v5
 go get github.com/mitchellh/go-ps
 go get github.com/blacknon/go-sshlib
 go get github.com/Desuuuu/windrive
-go get github.com/jimschubert/stripansi
 
 go mod tidy
 */
