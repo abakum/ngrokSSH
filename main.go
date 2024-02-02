@@ -80,7 +80,7 @@ const (
 	SOCKS5          = "1080"
 	HTTPX           = "3128"
 	B9600           = "9600"
-	MARK            = '(' // '✅'
+	MARK            = '('
 )
 
 var (
@@ -100,6 +100,7 @@ var (
 	Cwd,
 	Exe,
 	Image,
+	Imag,
 	PublicURL,
 	Ln,
 	So,
@@ -169,14 +170,13 @@ func main() {
 		sp string
 		err error
 	)
-
 	NgrokAuthToken = Getenv(NGROK_AUTHTOKEN, NgrokAuthToken) //create ngrok
 	NgrokApiKey = Getenv(NGROK_API_KEY, NgrokApiKey)         //use ngrok
 
 	Exe, err = os.Executable()
-	a = isAnsi()
 	Fatal(err)
 	Image = filepath.Base(Exe)
+	Imag = strings.Split(Image, ".")[0]
 
 	// CGI
 	if len(os.Args) == 2 {
@@ -207,6 +207,7 @@ func main() {
 	}
 
 	Cwd, err = os.Getwd()
+
 	Fatal(err)
 	RealReset()
 
@@ -289,6 +290,7 @@ func main() {
 		HardExe = HardPath(Drives, Exe)
 	}
 
+	a = menu.IsAnsi()
 	flag.BoolVar(&a, "a", a, fmt.Sprintf("`ansi` sequence enabled console - консоль поддерживает ansi последовательности\nexample - пример `%s -a` or `%s -a=false`", Image, Image))
 	flag.StringVar(&Baud, "b", B9600, fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 115200` or `%s -b 1`", Image, Image))
 	flag.BoolVar(&h, "h", h, fmt.Sprintf("show `help` for usage - показать использование параметров\nexample - пример `%s -h`", Image))
@@ -300,13 +302,15 @@ func main() {
 	flag.BoolVar(&t, "t", false, fmt.Sprintf("get binding of serial port over `telnet` daemon - где слушает сервер последовательного порта `hub4com`\nexample - пример `%s -t`", Image))
 	flag.BoolVar(&v, "v", false, fmt.Sprintf("get binding of `VNC` daemon - где слушает сервер VNC\nexample - пример `%s -v`", Image))
 	flag.Parse()
-	SetPrefix(a)
 
 	if h {
 		fmt.Printf("Version %s of `%s params [user@][host[:port]] [command [params]]`\n", Ver, Image)
 		flag.PrintDefaults()
 		return
 	}
+
+	SetColor()
+
 	if actual(flag.CommandLine, "b") {
 		i, err := strconv.Atoi(Baud)
 		if err == nil {

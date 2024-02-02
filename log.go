@@ -2,22 +2,22 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
 	"runtime"
-	"strings"
 
-	"github.com/mitchellh/go-ps"
+	"github.com/abakum/menu"
+	"github.com/mattn/go-colorable"
+	"github.com/pborman/ansi"
 	"github.com/xlab/closer"
 )
 
 const (
-	ansiReset     = "\u001B[0m"
-	ansiRedBGBold = "\u001B[41m\u001B[1m"
-	BUG           = "Ж"
-	ansiGreenFG   = "\u001B[32m\u001B[1m"
-	GT            = ">"
+	BoldRedBackground = "\033[1;41m"
+	BUG               = "Ж"
+	GT                = ">"
 )
 
 var (
@@ -28,37 +28,24 @@ var (
 	li   = log.New(os.Stdout, "\t", 0)
 )
 
-// color for ansi enabled console
-func SetPrefix(a bool) {
+// Colorable log
+func SetColor() {
+	var w io.Writer = os.Stdout
 	Bug = BUG
 	Gt = GT
-	if a {
-		Bug = ansiRedBGBold + BUG + ansiReset
-		Gt = ansiGreenFG + GT + ansiReset
+	letf.SetOutput(w)
+	let.SetOutput(w)
+	if menu.IsColor() {
+		Bug = BoldRedBackground + BUG + ansi.NormalText
+		Gt = ansi.BoldGreenText + GT + ansi.NormalText
+		if !menu.IsAnsi() {
+			w = colorable.NewColorableStdout()
+			letf.SetOutput(w)
+			let.SetOutput(w)
+		}
 	}
 	letf.SetPrefix(Bug)
 	let.SetPrefix(Bug)
-}
-
-// `choco install ansicon`
-func isAnsi() (ok bool) {
-	if os.Getenv("ANSICON") != "" {
-		return true
-	}
-	parent, err := ps.FindProcess(os.Getppid())
-	if err != nil {
-		letf.Println(err)
-		return
-	}
-	var PS = []string{"powershell.exe", "ansicon.exe", "conemuc.exe"}
-	for _, exe := range PS {
-		ok = strings.ToLower(parent.Executable()) == exe
-		if ok {
-			break
-		}
-	}
-	SetPrefix(ok)
-	return
 }
 
 // Get source of code

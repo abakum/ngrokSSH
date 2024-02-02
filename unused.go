@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	windowsconsole "github.com/moby/term/windows"
 	"golang.org/x/sys/windows"
@@ -26,4 +27,13 @@ func GetStdout() io.Writer {
 	stdout := windowsconsole.NewAnsiWriter(int(h))
 
 	return stdout
+}
+
+// bytesToHex converts a slice of bytes to a human-readable string.
+func bytesToHex(b []byte) string {
+	hex := make([]string, len(b))
+	for i, ch := range b {
+		hex[i] = fmt.Sprintf("%X", ch)
+	}
+	return strings.Join(hex, "")
 }

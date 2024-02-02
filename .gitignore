@@ -28,3 +28,4 @@ go.sum
 *.vnc
 *.bat
 *.lnk
+*.log

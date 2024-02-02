@@ -9,7 +9,7 @@ require (
 	github.com/Desuuuu/windrive v0.2.2
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
-	github.com/abakum/menu v0.0.0-20240126133001-3e3004e639ff
+	github.com/abakum/menu v0.0.0-20240131083028-7a796a0e335e
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
 	github.com/abakum/proxy v0.0.6-lw
 	github.com/abakum/winssh v0.0.0-20240122221534-be9e1422c408
@@ -18,9 +18,11 @@ require (
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
 	github.com/gliderlabs/ssh v0.3.6
+	github.com/mattn/go-colorable v0.1.13
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/moby/term v0.5.0
 	github.com/ngrok/ngrok-api-go/v5 v5.2.0
+	github.com/pborman/ansi v1.0.0
 	github.com/xlab/closer v1.1.0
 	go.bug.st/serial v1.6.1
 	golang.ngrok.com/ngrok v1.7.0
@@ -47,7 +49,6 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/miekg/pkcs11 v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

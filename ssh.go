@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,9 +22,11 @@ import (
 	"github.com/abakum/proxy"
 	"github.com/blacknon/go-sshlib"
 	termm "github.com/moby/term"
+	"github.com/pborman/ansi"
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -52,6 +55,7 @@ func client(user, host, port, listenAddress string) {
 	con := &sshlib.Connect{
 		ForwardAgent: A,
 		Agent:        agent.NewClient(sock),
+		TTY:          true,
 	}
 
 	signers, err = sshlib.CreateSignerAgent(con.Agent)
@@ -59,12 +63,10 @@ func client(user, host, port, listenAddress string) {
 	FatalOr("len(signers) < 1", len(signers) < 1)
 
 	Fatal(con.CreateClient(host, port, user, []ssh.AuthMethod{ssh.PublicKeys(signers...)}))
-	Println(string(con.Client.ServerVersion()))
-
+	serverVersion := string(con.Client.ServerVersion())
+	Println(serverVersion)
 	if Cmd != "" {
-		con.TTY = true
-		con.Stdin, con.Stdout, con.Stderr = termm.StdStreams()
-		Println(Cmd, con.Command(Cmd))
+		Println(Cmd, Command(con, Cmd, strings.Contains(serverVersion, Imag)))
 		return
 	}
 
@@ -121,7 +123,9 @@ func client(user, host, port, listenAddress string) {
 	}
 
 	for _, o := range V {
-		hphp, e := cgi(con, Image+" "+CGIV, o, RFB)
+		s := Image + " " + CGIV
+		hphp, e := cgi(con, s, o, RFB)
+		Println(s, strings.Join(hphp, ":"), e)
 		if e != nil {
 			continue
 		}
@@ -172,7 +176,9 @@ func client(user, host, port, listenAddress string) {
 			count++
 		}
 		for _, o := range T {
-			hphp, e := cgi(con, Image+" "+CGIT, o, RFC2217)
+			s := Image + " " + CGIT
+			hphp, e := cgi(con, s, o, RFC2217)
+			Println(s, strings.Join(hphp, ":"), e)
 			if e != nil {
 				continue
 			}
@@ -197,6 +203,10 @@ func shellMenu(index int, pressed rune, suf string, con *sshlib.Connect) string 
 	r := rune('1' + index)
 	switch pressed {
 	case r:
+		ok, err := AllowVTP(os.Stdout)
+		if err == nil && !ok && !a {
+			Println("choco install ansicon")
+		}
 		Shell(con)
 		return string(r)
 	case menu.ITEM:
@@ -489,32 +499,30 @@ func tryBindR(con *sshlib.Connect, hp ...string) (hphp []string, err error) {
 	return
 }
 
-func cgi(con *sshlib.Connect, cc, opt string, port int) (hphp []string, err error) {
+func cgi(c *sshlib.Connect, cc, opt string, port int) (hphp []string, err error) {
 	hphp = parseHPHP(opt, port)
 	err = fmt.Errorf("empty")
-	if con == nil || cc == "" {
+	if c == nil || cc == "" {
 		return
 	}
 	if len(hphp) > 2 {
 		// L = append(L, strings.Join(hphp, ":"))
-		return tryBindL(con, hphp...)
+		return tryBindL(c, hphp...)
 	}
-	var o bytes.Buffer
-	con.Stdin = new(bytes.Buffer)
-	con.Stdout = &o
-	con.Stderr = io.Discard
-	Println(cc, con.Command(cc), o.String())
-	con.Stdin = nil
-	con.Stdout = nil
-	con.Stderr = nil
-	h, p, err := net.SplitHostPort(o.String())
+	var bs []byte
+	bs, err = Output(c, cc, false)
+	if err != nil {
+		return
+	}
+	h, p, err := net.SplitHostPort(strings.Split(string(bs), "\n")[0])
+	// Println(h, p, err)
 	if err != nil {
 		return
 	}
 	if h == ALL {
 		h = LH
 	}
-	return tryBindL(con, append(hphp, h, p)...)
+	return tryBindL(c, append(hphp, h, p)...)
 }
 
 // return h:p:h:p
@@ -601,10 +609,6 @@ func setX(key, val string) {
 }
 
 func setupShell(c *sshlib.Connect) (err error) {
-	// Set Stdin, Stdout, Stderr...
-	c.Session.Stdin = c.Stdin
-	c.Session.Stdout = c.Stdout
-	c.Session.Stderr = c.Stderr
 
 	// Request tty
 	err = sshlib.RequestTty(c.Session)
@@ -631,49 +635,14 @@ func setupShell(c *sshlib.Connect) (err error) {
 
 // Shell connect login shell over ssh.
 func Shell(c *sshlib.Connect) (err error) {
+
 	if c.Session == nil {
 		c.Session, err = c.CreateSession()
 		if err != nil {
 			return
 		}
 	}
-	defer func() {
-		// c.Session.Close()
-		c.Session = nil
-	}()
-
-	si, err := termm.SetRawTerminal(os.Stdin.Fd())
-	if err != nil {
-		return
-	}
-	defer termm.RestoreTerminal(os.Stdin.Fd(), si)
-
-	so, err := termm.SetRawTerminalOutput(os.Stdout.Fd())
-	if err != nil {
-		return
-	}
-	defer termm.RestoreTerminal(os.Stdout.Fd(), so)
-
-	se, err := termm.SetRawTerminalOutput(os.Stderr.Fd())
-	if err != nil {
-		return
-	}
-	defer termm.RestoreTerminal(os.Stderr.Fd(), se)
-
-	// c.Stdin, c.Stdout, c.Stderr = termm.StdStreams()
-	_, c.Stdout, c.Stderr = termm.StdStreams()
-
-	stdin, err := windowsconsole.NewAnsiReaderDuplicate(os.Stdin)
-	if err != nil {
-		return
-	}
-	defer stdin.Close()
-
-	c.Stdin = stdin
-
-	defer func() {
-		c.Stdin, c.Stdout, c.Stderr = nil, nil, nil
-	}()
+	defer func() { c.Session = nil }()
 
 	// setup
 	err = setupShell(c)
@@ -681,6 +650,27 @@ func Shell(c *sshlib.Connect) (err error) {
 		return
 	}
 
+	// Set Stdin, Stdout, Stderr...
+	std := newIOE()
+	defer std.Close()
+	c.Session.Stdin = std.rc
+
+	c.Session.Stdout = os.Stdout
+	c.Session.Stdout = os.Stderr
+	if !a {
+		wo, do, err := stdOE(os.Stdout)
+		if err == nil {
+			//Win7
+			defer do.Close()
+			c.Session.Stdout = wo
+		}
+
+		we, de, err := stdOE(os.Stderr)
+		if err == nil {
+			defer de.Close()
+			c.Session.Stderr = we
+		}
+	}
 	// Start shell
 	err = c.Session.Shell()
 	if err != nil {
@@ -696,7 +686,7 @@ func Shell(c *sshlib.Connect) (err error) {
 
 // Command connect and run command over ssh.
 // Output data is processed by channel because it is executed in parallel. If specification is troublesome, it is good to generate and process session from ssh package.
-func Command(c *sshlib.Connect, command string) (err error) {
+func Command(c *sshlib.Connect, command string, ptyTrue bool) (err error) {
 	// create session
 	if c.Session == nil {
 		c.Session, err = c.CreateSession()
@@ -713,30 +703,33 @@ func Command(c *sshlib.Connect, command string) (err error) {
 	}
 
 	// Set Stdin, Stdout, Stderr...
-	if c.Stdin != nil {
-		w, _ := c.Session.StdinPipe()
-		go io.Copy(w, c.Stdin)
-	} else {
-		stdin := sshlib.GetStdin()
-		c.Session.Stdin = stdin
-	}
+	std := newIOE()
+	defer std.Close()
+	c.Session.Stdin = std.rc
 
-	if c.Stdout != nil {
-		or, _ := c.Session.StdoutPipe()
-		go io.Copy(c.Stdout, or)
-	} else {
-		c.Session.Stdout = os.Stdout
-	}
+	c.Session.Stdout = os.Stdout
+	c.Session.Stdout = os.Stderr
+	if !a {
+		wo, do, err := stdOE(os.Stdout)
+		if err == nil {
+			//Win7
+			defer do.Close()
+			c.Session.Stdout = wo
+		}
 
-	if c.Stderr != nil {
-		er, _ := c.Session.StderrPipe()
-		go io.Copy(c.Stderr, er)
-	} else {
-		c.Session.Stderr = os.Stderr
+		we, de, err := stdOE(os.Stderr)
+		if err == nil {
+			defer de.Close()
+			c.Session.Stderr = we
+		}
+	}
+	if !ptyTrue {
+		// fix pty of OpenSSH sshd
+		command += "&timeout/t 0"
 	}
 
 	// Run Command
-	c.Session.Run(command)
+	err = c.Session.Run(command)
 
 	return
 }
@@ -765,4 +758,199 @@ func setOption(c *sshlib.Connect, session *ssh.Session) (err error) {
 	}
 
 	return
+}
+
+func stdIn() (trg io.ReadCloser, err error) {
+	src := os.Stdin
+	var (
+		mode    uint32
+		emulate bool
+	)
+
+	fd := windows.Handle(src.Fd())
+	if err := windows.GetConsoleMode(fd, &mode); err == nil {
+		// Validate that winterm.ENABLE_VIRTUAL_TERMINAL_INPUT is supported, but do not set it.
+		if err = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_INPUT); err != nil {
+			emulate = true
+		}
+		// Unconditionally set the console mode back even on failure because SetConsoleMode
+		// remembers invalid bits on input handles.
+		_ = windows.SetConsoleMode(fd, mode)
+	}
+
+	if emulate {
+		return windowsconsole.NewAnsiReaderDuplicate(src)
+	}
+	return nil, ErrWin10
+}
+
+func AllowVTI() (ok bool, err error) {
+	src := os.Stdin
+	var (
+		mode uint32
+	)
+	fd := windows.Handle(src.Fd())
+	if err := windows.GetConsoleMode(fd, &mode); err == nil {
+		// isConsole
+		// Validate that winterm.ENABLE_VIRTUAL_TERMINAL_INPUT is supported, but do not set it.
+		ok = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_INPUT) == nil
+		// Unconditionally set the console mode back even on failure because SetConsoleMode
+		// remembers invalid bits on input handles.
+		_ = windows.SetConsoleMode(fd, mode)
+	}
+	return
+}
+
+var ErrWin10 = errors.New("no need emulate")
+
+func stdOE(src *os.File) (io.Writer, *os.File, error) {
+	var (
+		mode    uint32
+		emulate bool
+	)
+
+	fd := windows.Handle(src.Fd())
+	if err := windows.GetConsoleMode(fd, &mode); err == nil {
+		// Validate winterm.DISABLE_NEWLINE_AUTO_RETURN is supported, but do not set it.
+		if err = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.DISABLE_NEWLINE_AUTO_RETURN); err != nil {
+			emulate = true
+		} else {
+			_ = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+		}
+	}
+
+	if emulate {
+		return windowsconsole.NewAnsiWriterFileDuplicate(src)
+	}
+	return nil, nil, ErrWin10
+}
+
+func AllowVTP(src *os.File) (ok bool, err error) {
+	var (
+		mode uint32
+	)
+	if src == nil {
+		src = os.Stdout
+	}
+	fd := windows.Handle(src.Fd())
+	err = windows.GetConsoleMode(fd, &mode)
+	if err == nil {
+		// isConsole
+		ok = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.DISABLE_NEWLINE_AUTO_RETURN) == nil
+		_ = windows.SetConsoleMode(fd, mode)
+	}
+	return
+}
+func EnableVTP() (ok bool) {
+	var (
+		mode uint32
+	)
+	fd := windows.Handle(os.Stdout.Fd())
+	if err := windows.GetConsoleMode(fd, &mode); err == nil {
+		// isConsole
+		ok = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING) == nil
+	}
+	return
+}
+
+type ioe struct {
+	i, o, e *termm.State
+	rc      io.ReadCloser
+}
+
+func newIOE() (s *ioe) {
+	s = &ioe{}
+
+	termm.StdStreams()
+	s.i, _ = termm.SetRawTerminal(os.Stdin.Fd())
+	s.o, _ = termm.SetRawTerminalOutput(os.Stdout.Fd())
+	s.e, _ = termm.SetRawTerminalOutput(os.Stderr.Fd())
+	// for Win10 no need emulation VTP but need close duble of os.Stdin
+	// to unblock input after return
+	s.rc, _ = windowsconsole.NewAnsiReaderDuplicate(os.Stdin)
+	return
+}
+
+func (s *ioe) Close() {
+	if s == nil {
+		return
+	}
+	if s.rc != nil {
+		if s.rc.Close() == nil {
+			s.rc = nil
+		}
+	}
+	if s.e != nil {
+		if termm.RestoreTerminal(os.Stderr.Fd(), s.e) == nil {
+			s.e = nil
+		}
+	}
+	if s.o != nil {
+		if termm.RestoreTerminal(os.Stdout.Fd(), s.o) == nil {
+			s.o = nil
+		}
+	}
+	if s.i != nil {
+		if termm.RestoreTerminal(os.Stdin.Fd(), s.i) == nil {
+			s.i = nil
+		}
+	}
+	s = nil
+}
+
+func Output(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
+	if c.Session == nil {
+		c.Session, err = c.CreateSession()
+		if err != nil {
+			return
+		}
+	}
+	c.TTY = pty
+
+	defer func() {
+		c.Session = nil
+		c.TTY = true
+	}()
+
+	// setup options
+	err = setOption(c, c.Session)
+	if err != nil {
+		return
+	}
+	bs, err = c.Session.Output(cmd)
+	if err != nil {
+		return
+	}
+	if pty {
+		Println(Esc(bs))
+		bs, _ = ansi.Strip(bs)
+	}
+	return
+}
+
+func Output2(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
+	var o bytes.Buffer
+	c.Stdin = new(bytes.Buffer)
+	c.Stdout = &o
+	c.Stderr = io.Discard
+	c.TTY = pty
+	err = c.Command(cmd)
+	c.TTY = true
+	bs = o.Bytes()
+	c.Stderr = nil
+	c.Stdout = nil
+	c.Stdin = nil
+	if err != nil {
+		return
+	}
+	if pty {
+		Println(Esc(bs))
+		bs, _ = ansi.Strip(bs)
+	}
+	return
+}
+
+// bytesToHex converts a slice of bytes to a human-readable string.
+func Esc(b []byte) string {
+	return string(bytes.ReplaceAll(b, []byte{0x1b}, []byte{'~'}))
 }

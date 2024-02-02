@@ -41,7 +41,7 @@ func server() {
 	if listenaddress != "" {
 		go established(ctxRWE, sshdExe)
 	}
-	if listenaddress == Hp {
+	if listenaddress == Hp || Hp == "0.0.0.0:22" {
 		Once.Do(func() {
 			var (
 				exe string
@@ -109,6 +109,8 @@ func server() {
 				}
 			}
 		})
+	}
+	if listenaddress == Hp {
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
 		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, Hp)
 		if NgrokHasTunnel || !NgrokOnline {
@@ -160,6 +162,7 @@ func server() {
 		SessionRequestCallback: SessionRequestCallback,
 		// IdleTimeout:            -time.Second * 100, // send `keepalive` every 100 seconds
 		// MaxTimeout:             -time.Second * 300, // сlosing the session after 300 seconds with no response
+		Version: Imag + "_" + Ver,
 	}
 
 	// next for server key
@@ -180,18 +183,21 @@ func server() {
 
 	gl.Handle(func(s gl.Session) {
 		defer s.Exit(0)
-		if len(s.Command()) > 1 {
-			iBase := strings.Split(Image, ".")[0]
-			cBase := strings.Split(s.Command()[0], ".")[0]
-			if strings.HasSuffix(strings.ToLower(cBase), strings.ToLower(iBase)) {
-				ret, res := rtv(s.Command()[1])
-				if ret {
-					if res == CGIR {
-						caRW()
-					} else {
-						fmt.Fprint(s, res)
+		switch 1 {
+		case 1:
+			if len(s.Command()) > 1 {
+				base := filepath.Base(s.Command()[0])
+				bas := strings.Split(base, ".")[0]
+				if strings.EqualFold(bas, Imag) {
+					ret, res := rtv(s.Command()[1])
+					if ret {
+						if res == CGIR {
+							caRW()
+						} else {
+							fmt.Fprint(s, res)
+						}
+						return
 					}
-					return
 				}
 			}
 		}
