@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 
-	ansiterm "github.com/Azure/go-ansiterm"
-	"github.com/Azure/go-ansiterm/winterm"
+	ansiterm "github.com/abakum/go-ansiterm"
+	"github.com/abakum/go-ansiterm/winterm"
 )
 
 // ansiWriter wraps a standard output file (e.g., os.Stdout) providing ANSI sequence translation.
@@ -36,7 +36,7 @@ func NewAnsiWriterFile(src *os.File) io.Writer {
 		return nil
 	}
 
-	parser := ansiterm.CreateParser("Ground", winterm.CreateWinEventHandler(fd, src))
+	parser := ansiterm.CreateParser("Ground", winterm.CreateWinEventHandler(fd, src), ansiterm.WithFe(true))
 
 	return &ansiWriter{
 		file:           src,

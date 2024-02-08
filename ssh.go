@@ -16,13 +16,13 @@ import (
 	_ "embed"
 
 	"github.com/Microsoft/go-winio"
+	"github.com/abakum/go-ansiterm"
 	"github.com/abakum/menu"
 	windowsconsole "github.com/abakum/ngrokSSH/windows"
 	"github.com/abakum/pageant"
 	"github.com/abakum/proxy"
 	"github.com/blacknon/go-sshlib"
 	termm "github.com/moby/term"
-	"github.com/pborman/ansi"
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -169,7 +169,7 @@ func client(user, host, port, listenAddress string) {
 	}
 
 	if So == "" {
-		letf.Printf("not found %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR)
+		letf.Printf("not found %s\nInstall %s\n`setupc install 0 PortName=COM#,RealPortName=COM11,EmuBR=yes,AddRTTO=1,AddRITO=1 -`\n", EMULATOR, COM0COM)
 	} else {
 		if actual(flag.CommandLine, "T") || actual(flag.CommandLine, "b") {
 			d = rune('1'+len(items)) - 1
@@ -725,7 +725,7 @@ func Command(c *sshlib.Connect, command string, ptyTrue bool) (err error) {
 	}
 	if !ptyTrue {
 		// fix pty of OpenSSH sshd
-		command += "&timeout/t 0"
+		command += "&timeout/t 1"
 	}
 
 	// Run Command
@@ -923,7 +923,8 @@ func Output(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
 	}
 	if pty {
 		Println(Esc(bs))
-		bs, _ = ansi.Strip(bs)
+		// bs, _ = ansi.Strip(bs)
+		bs, _ = ansiterm.Strip(bs, ansiterm.WithFe(true))
 	}
 	return
 }
@@ -945,7 +946,9 @@ func Output2(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
 	}
 	if pty {
 		Println(Esc(bs))
-		bs, _ = ansi.Strip(bs)
+		// bs, _ = ansi.Strip(bs)
+		bs, _ = ansiterm.Strip(bs, ansiterm.WithFe(true))
+
 	}
 	return
 }

@@ -5,9 +5,10 @@ go 1.21.4
 replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 v1.2.6
 
 require (
-	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161
 	github.com/Desuuuu/windrive v0.2.2
 	github.com/Microsoft/go-winio v0.6.1
+	github.com/abakum/go-ansiterm v0.0.0-20240207203537-8200da24517c
+	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
 	github.com/abakum/menu v0.0.0-20240131083028-7a796a0e335e
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
@@ -33,9 +34,9 @@ require (
 )
 
 require (
+	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/ScaleFT/sshkeys v1.2.0 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
-	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/creack/goselect v0.1.2 // indirect

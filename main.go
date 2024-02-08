@@ -6,6 +6,7 @@ go get github.com/abakum/winssh@latest
 go get github.com/abakum/go-netstat@latest
 go get github.com/abakum/proxy@latest
 go get github.com/abakum/menu@latest
+go get github.com/abakum/go-ansiterm@latest
 
 go get github.com/gliderlabs/ssh
 go get github.com/pkg/sftp
@@ -42,6 +43,7 @@ import (
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
+	"github.com/eiannone/keyboard"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
 	"github.com/xlab/closer"
@@ -57,6 +59,7 @@ const (
 	RFC2217         = 2217
 	RFB             = 5900
 	EMULATOR        = "com0com - serial port emulator"
+	COM0COM         = "https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download"
 	ROOT            = "bin"
 	LIMIT           = "1"
 	ITO             = "10"
@@ -176,6 +179,7 @@ func main() {
 	Fatal(err)
 	Image = filepath.Base(Exe)
 	Imag = strings.Split(Image, ".")[0]
+	Println(runtime.GOOS, runtime.GOARCH, Imag, Ver)
 
 	// CGI
 	if len(os.Args) == 2 {
@@ -398,7 +402,6 @@ func main() {
 	dial = dial || actual(flag.CommandLine, "L") || actual(flag.CommandLine, "R") || actual(flag.CommandLine, "S")
 	serv = serv || D
 	// for serial console need So!=""
-	// `choco install com0com`
 	if So != "" && !dial {
 		// items := []func(index int) string{}
 		items := []menu.MenuFunc{menu.Static(MENU).Prompt}
@@ -505,6 +508,7 @@ func interfaces() (ips []string) {
 }
 
 func cleanup() {
+	PressAnyKey("Press any key - Нажмите любую клавишу>", time.Second*7)
 	winssh.AllDone(os.Getpid())
 }
 
@@ -745,4 +749,23 @@ func RealReset() {
 		Println("RealSet", "", "")
 		return
 	}
+}
+
+func PressAnyKey(s string, d time.Duration) {
+	parent, err := ps.FindProcess(os.Getppid())
+	if err == nil {
+		for _, exe := range []string{"powershell.exe", "conemuc.exe", "cmd.exe"} {
+			if strings.EqualFold(parent.Executable(), exe) {
+				return
+			}
+		}
+	}
+	if d > 0 {
+		time.AfterFunc(d, func() {
+			keyboard.Close()
+		})
+	}
+	fmt.Print(s)
+	keyboard.GetSingleKey()
+	fmt.Println()
 }
