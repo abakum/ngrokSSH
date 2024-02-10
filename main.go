@@ -7,13 +7,13 @@ go get github.com/abakum/go-netstat@latest
 go get github.com/abakum/proxy@latest
 go get github.com/abakum/menu@latest
 go get github.com/abakum/go-ansiterm@latest
+go get github.com/abakum/go-sshlib@latest
 
 go get github.com/gliderlabs/ssh
 go get github.com/pkg/sftp
 go get golang.ngrok.com/ngrok@v1.7.0
 go get github.com/ngrok/ngrok-api-go/v5
 go get github.com/mitchellh/go-ps
-go get github.com/blacknon/go-sshlib
 go get github.com/Desuuuu/windrive
 
 go mod tidy

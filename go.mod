@@ -9,6 +9,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/abakum/go-ansiterm v0.0.0-20240209124652-4fc46d492442
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
+	github.com/abakum/go-sshlib v0.0.5-lw
 	github.com/abakum/menu v0.0.0-20240209213529-cf43393155b2
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
 	github.com/abakum/proxy v0.0.6-lw
@@ -34,6 +35,7 @@ require (
 	github.com/ScaleFT/sshkeys v1.2.0 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
 	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
+	github.com/abakum/term v0.0.0-20240210210245-a8f2378c1ad0 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/creack/goselect v0.1.2 // indirect
