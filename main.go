@@ -43,7 +43,6 @@ import (
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
-	"github.com/eiannone/keyboard"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
 	"github.com/xlab/closer"
@@ -157,8 +156,6 @@ var (
 	HardExe  = true // for linux symlink
 	Once     sync.Once
 	pemBytes []byte
-	Bug      = "Ж"
-	Gt       = ">"
 	Delay    = DELAY
 )
 
@@ -179,7 +176,6 @@ func main() {
 	Fatal(err)
 	Image = filepath.Base(Exe)
 	Imag = strings.Split(Image, ".")[0]
-	Println(runtime.GOOS, runtime.GOARCH, Imag, Ver)
 
 	// CGI
 	if len(os.Args) == 2 {
@@ -216,6 +212,8 @@ func main() {
 
 	RealVV = filepath.Join(Cwd, ROOT, REALVV)
 	proxy.RealAddrBook(RealVV)
+
+	Println(runtime.GOOS, runtime.GOARCH, Imag, Ver)
 
 	Fns, _ = UnloadEmbedded(Bin, ROOT, Cwd, ROOT, true)
 
@@ -508,7 +506,7 @@ func interfaces() (ips []string) {
 }
 
 func cleanup() {
-	PressAnyKey("Press any key - Нажмите любую клавишу>", time.Second*7)
+	menu.PressAnyKey("Press any key - Нажмите любую клавишу", TOW)
 	winssh.AllDone(os.Getpid())
 }
 
@@ -749,23 +747,4 @@ func RealReset() {
 		Println("RealSet", "", "")
 		return
 	}
-}
-
-func PressAnyKey(s string, d time.Duration) {
-	parent, err := ps.FindProcess(os.Getppid())
-	if err == nil {
-		for _, exe := range []string{"powershell.exe", "conemuc.exe", "cmd.exe"} {
-			if strings.EqualFold(parent.Executable(), exe) {
-				return
-			}
-		}
-	}
-	if d > 0 {
-		time.AfterFunc(d, func() {
-			keyboard.Close()
-		})
-	}
-	fmt.Print(s)
-	keyboard.GetSingleKey()
-	fmt.Println()
 }

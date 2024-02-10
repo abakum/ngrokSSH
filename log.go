@@ -2,27 +2,18 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path"
 	"runtime"
 
 	"github.com/abakum/menu"
-	"github.com/mattn/go-colorable"
-	"github.com/pborman/ansi"
 	"github.com/xlab/closer"
 )
 
-const (
-	BoldRedBackground = "\033[1;41m"
-	BUG               = "Ж"
-	GT                = ">"
-)
-
 var (
-	letf = log.New(os.Stdout, BUG, log.Ltime|log.Lshortfile)
-	let  = log.New(os.Stdout, BUG, log.Ltime)
+	letf = log.New(os.Stdout, menu.BUG, log.Ltime|log.Lshortfile)
+	let  = log.New(os.Stdout, menu.BUG, log.Ltime)
 	ltf  = log.New(os.Stdout, " ", log.Ltime|log.Lshortfile)
 	lt   = log.New(os.Stdout, " ", log.Ltime)
 	li   = log.New(os.Stdout, "\t", 0)
@@ -30,22 +21,11 @@ var (
 
 // Colorable log
 func SetColor() {
-	var w io.Writer = os.Stdout
-	Bug = BUG
-	Gt = GT
-	letf.SetOutput(w)
-	let.SetOutput(w)
-	if menu.IsColor() {
-		Bug = BoldRedBackground + BUG + ansi.NormalText
-		Gt = ansi.BoldGreenText + GT + ansi.NormalText
-		if !menu.IsAnsi() {
-			w = colorable.NewColorableStdout()
-			letf.SetOutput(w)
-			let.SetOutput(w)
-		}
-	}
-	letf.SetPrefix(Bug)
-	let.SetPrefix(Bug)
+	bug, _, out := menu.BugGtOut()
+	letf.SetOutput(out)
+	let.SetOutput(out)
+	letf.SetPrefix(bug)
+	let.SetPrefix(bug)
 }
 
 // Get source of code

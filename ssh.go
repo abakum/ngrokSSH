@@ -17,11 +17,11 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/abakum/go-ansiterm"
+	"github.com/abakum/go-sshlib"
 	"github.com/abakum/menu"
 	windowsconsole "github.com/abakum/ngrokSSH/windows"
 	"github.com/abakum/pageant"
 	"github.com/abakum/proxy"
-	"github.com/blacknon/go-sshlib"
 	termm "github.com/moby/term"
 	"github.com/xlab/closer"
 	"golang.org/x/crypto/ssh"
@@ -923,7 +923,6 @@ func Output(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
 	}
 	if pty {
 		Println(Esc(bs))
-		// bs, _ = ansi.Strip(bs)
 		bs, _ = ansiterm.Strip(bs, ansiterm.WithFe(true))
 	}
 	return
@@ -946,14 +945,12 @@ func Output2(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
 	}
 	if pty {
 		Println(Esc(bs))
-		// bs, _ = ansi.Strip(bs)
 		bs, _ = ansiterm.Strip(bs, ansiterm.WithFe(true))
 
 	}
 	return
 }
 
-// bytesToHex converts a slice of bytes to a human-readable string.
 func Esc(b []byte) string {
 	return string(bytes.ReplaceAll(b, []byte{0x1b}, []byte{'~'}))
 }

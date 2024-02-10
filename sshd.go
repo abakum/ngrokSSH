@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/abakum/go-ansiterm"
-	"github.com/abakum/go-console"
 	"github.com/abakum/go-netstat/netstat"
 	"github.com/abakum/winssh"
 	gl "github.com/gliderlabs/ssh"
@@ -185,6 +184,7 @@ func server() {
 
 	gl.Handle(func(s gl.Session) {
 		defer s.Exit(0)
+		ltf.Println(s.Context().ClientVersion())
 		switch 1 {
 		case 1:
 			if len(s.Command()) > 1 {
@@ -203,7 +203,11 @@ func server() {
 				}
 			}
 		}
-		ShellOrExec(s)
+		time.AfterFunc(time.Millisecond*333, func() {
+			title := SetConsoleTitle(CutSSH2(s.Context().ClientVersion()) + "@" + CutSSH2(s.Context().ServerVersion()))
+			s.Write([]byte(title))
+		})
+		winssh.ShellOrExec(s)
 	})
 
 	li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", Image, Image, Hp)
@@ -226,6 +230,16 @@ func server() {
 	}()
 	go established(ctxRWE, Image)
 	Println("ListenAndServe", server.ListenAndServe())
+}
+
+func CutSSH2(s string) string {
+	after, _ := strings.CutPrefix(s, "SSH-2.0-")
+	return after
+
+}
+
+func SetConsoleTitle(s string) string {
+	return fmt.Sprintf("%c]0;%s%c", ansiterm.ANSI_ESCAPE_PRIMARY, s, ansiterm.ANSI_BEL)
 }
 
 func un(ru string) (u string) {
@@ -503,70 +517,4 @@ func KeyFromClient(key gl.PublicKey, old []ssh.PublicKey) []ssh.PublicKey {
 	ltf.Println("KeyFromClient", FingerprintSHA256(key))
 	Println("WriteFile", AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, ssh.MarshalAuthorizedKey(key), FiLEMODE))
 	return []ssh.PublicKey{key}
-}
-
-// for shell and exec
-func ShellOrExec(s gl.Session) {
-	RemoteAddr := s.RemoteAddr()
-	defer ltf.Println(RemoteAddr, "done")
-
-	ptyReq, winCh, isPty := s.Pty()
-	if !isPty {
-		winssh.NoPTY(s)
-		return
-	}
-	// ssh -p 2222 a@127.0.0.1
-	// ssh -p 2222 a@127.0.0.1 -t commands
-	stdout, err := console.New(ptyReq.Window.Width, ptyReq.Window.Width)
-	if err != nil {
-		letf.Println("unable to create console", err)
-		winssh.NoPTY(s)
-		return
-	}
-	args := winssh.ShArgs(s.Command())
-	defer func() {
-		ltf.Println(args, "done")
-		if stdout != nil {
-			// stdout.Close()
-			stdout.Kill()
-		}
-	}()
-	stdout.SetCWD(winssh.Home(s))
-	stdout.SetENV(winssh.Env(s, args[0]))
-	err = stdout.Start(args)
-	if err != nil {
-		letf.Println("unable to start", args, err)
-		winssh.NoPTY(s)
-		return
-	}
-
-	ppid, _ := stdout.Pid()
-	ltf.Println(args, ppid)
-	go func() {
-		for {
-			if stdout == nil || s == nil {
-				return
-			}
-			select {
-			case <-s.Context().Done():
-				stdout.Close()
-				return
-			case win := <-winCh:
-				ltf.Println("PTY SetSize", win)
-				if win.Height == 0 && win.Width == 0 {
-					stdout.Close()
-					return
-				}
-				if err := stdout.SetSize(win.Width, win.Height); err != nil {
-					letf.Println(err)
-				}
-			}
-		}
-	}()
-
-	time.AfterFunc(time.Millisecond*100, func() {
-		fmt.Fprintf(s, "%c]0;%s%c", ansiterm.ANSI_ESCAPE_PRIMARY, s.Context().ServerVersion(), ansiterm.ANSI_BEL)
-	})
-	go io.Copy(stdout, s)
-	io.Copy(s, stdout)
 }
