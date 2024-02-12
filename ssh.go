@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -40,9 +41,8 @@ func client(user, host, port, listenAddress string) {
 		AB       = "AB"
 	)
 	var (
-		sock    net.Conn
-		signers []ssh.Signer
-		err     error
+		sock net.Conn
+		err  error
 	)
 	title := fmt.Sprintf("%s@%s:%s", user, host, port)
 
@@ -51,18 +51,17 @@ func client(user, host, port, listenAddress string) {
 	sock, err = NewConn()
 	Fatal(err)
 	defer sock.Close()
+	ea := agent.NewClient(sock)
 
 	con := &sshlib.Connect{
 		ForwardAgent: A,
-		Agent:        agent.NewClient(sock),
+		Agent:        ea,
 		TTY:          true,
+		Version:      banner(),
 	}
 
-	signers, err = sshlib.CreateSignerAgent(con.Agent)
-	Fatal(err)
-	FatalOr("len(signers) < 1", len(signers) < 1)
+	Fatal(con.CreateClient(host, port, user, []ssh.AuthMethod{ssh.PublicKeysCallback(ea.Signers)}))
 
-	Fatal(con.CreateClient(host, port, user, []ssh.AuthMethod{ssh.PublicKeys(signers...)}))
 	serverVersion := string(con.Client.ServerVersion())
 	Println(serverVersion)
 	if Cmd != "" {
@@ -192,6 +191,18 @@ func client(user, host, port, listenAddress string) {
 	menu.Menu(d, count == 1 && d != '1', true, items...)
 }
 
+func banner() string {
+	goos := runtime.GOOS
+	if goos == "windows" {
+		majorVersion, minorVersion, buildNumber := windows.RtlGetNtVersionNumbers()
+		goos = fmt.Sprintf("%s_%d.%d.%d", goos, majorVersion, minorVersion, buildNumber)
+	}
+	return strings.Join([]string{
+		Imag,
+		Ver,
+		goos,
+	}, "_")
+}
 func quote(s string) string {
 	if strings.Contains(s, " ") {
 		return fmt.Sprintf(`"%s"`, s)
@@ -203,10 +214,6 @@ func shellMenu(index int, pressed rune, suf string, con *sshlib.Connect) string 
 	r := rune('1' + index)
 	switch pressed {
 	case r:
-		ok, err := AllowVTP(os.Stdout)
-		if err == nil && !ok && !a {
-			Println("choco install ansicon")
-		}
 		Shell(con)
 		return string(r)
 	case menu.ITEM:
@@ -353,13 +360,10 @@ func sshTry(u, h, p string) (err error) {
 		return
 	}
 	defer rw.Close()
-	ag := agent.NewClient(rw)
-	signers, err := ag.Signers()
-	if err != nil || len(signers) == 0 {
-		return
-	}
+	ea := agent.NewClient(rw)
+
 	config := ssh.ClientConfig{
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signers...)},
+		Auth:            []ssh.AuthMethod{ssh.PublicKeysCallback(ea.Signers)},
 		HostKeyCallback: FixedHostKeys(KnownKeys...),
 		User:            u,
 	}
@@ -367,7 +371,6 @@ func sshTry(u, h, p string) (err error) {
 	if err != nil {
 		return
 	}
-	// Println(string(client.ServerVersion()))
 	client.Close()
 	return
 }
@@ -760,30 +763,6 @@ func setOption(c *sshlib.Connect, session *ssh.Session) (err error) {
 	return
 }
 
-func stdIn() (trg io.ReadCloser, err error) {
-	src := os.Stdin
-	var (
-		mode    uint32
-		emulate bool
-	)
-
-	fd := windows.Handle(src.Fd())
-	if err := windows.GetConsoleMode(fd, &mode); err == nil {
-		// Validate that winterm.ENABLE_VIRTUAL_TERMINAL_INPUT is supported, but do not set it.
-		if err = windows.SetConsoleMode(fd, mode|windows.ENABLE_VIRTUAL_TERMINAL_INPUT); err != nil {
-			emulate = true
-		}
-		// Unconditionally set the console mode back even on failure because SetConsoleMode
-		// remembers invalid bits on input handles.
-		_ = windows.SetConsoleMode(fd, mode)
-	}
-
-	if emulate {
-		return windowsconsole.NewAnsiReaderDuplicate(src)
-	}
-	return nil, ErrWin10
-}
-
 func AllowVTI() (ok bool, err error) {
 	src := os.Stdin
 	var (
@@ -841,6 +820,7 @@ func AllowVTP(src *os.File) (ok bool, err error) {
 	}
 	return
 }
+
 func EnableVTP() (ok bool) {
 	var (
 		mode uint32
@@ -865,7 +845,7 @@ func newIOE() (s *ioe) {
 	s.i, _ = termm.SetRawTerminal(os.Stdin.Fd())
 	s.o, _ = termm.SetRawTerminalOutput(os.Stdout.Fd())
 	s.e, _ = termm.SetRawTerminalOutput(os.Stderr.Fd())
-	// for Win10 no need emulation VTP but need close duble of os.Stdin
+	// for Win10 no need emulation VTP but need close dublicate of os.Stdin
 	// to unblock input after return
 	s.rc, _ = windowsconsole.NewAnsiReaderDuplicate(os.Stdin)
 	return

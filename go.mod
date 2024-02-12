@@ -9,7 +9,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/abakum/go-ansiterm v0.0.0-20240209124652-4fc46d492442
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
-	github.com/abakum/go-sshlib v0.0.5-lw
+	github.com/abakum/go-sshlib v0.0.7-lw
 	github.com/abakum/menu v0.0.0-20240209213529-cf43393155b2
 	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
 	github.com/abakum/proxy v0.0.6-lw

@@ -163,7 +163,7 @@ func server() {
 		SessionRequestCallback: SessionRequestCallback,
 		// IdleTimeout:            -time.Second * 100, // send `keepalive` every 100 seconds
 		// MaxTimeout:             -time.Second * 300, // сlosing the session after 300 seconds with no response
-		Version: Imag + "_" + Ver,
+		Version: banner(),
 	}
 
 	// next for server key
@@ -233,7 +233,7 @@ func server() {
 }
 
 func CutSSH2(s string) string {
-	after, _ := strings.CutPrefix(s, "SSH-2.0-")
+	after, _ := strings.CutPrefix(s, SSH2)
 	return after
 
 }

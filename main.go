@@ -82,6 +82,7 @@ const (
 	HTTPX           = "3128"
 	B9600           = "9600"
 	MARK            = '('
+	SSH2            = "SSH-2.0-"
 )
 
 var (
