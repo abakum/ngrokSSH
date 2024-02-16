@@ -83,6 +83,7 @@ const (
 	B9600           = "9600"
 	MARK            = '('
 	SSH2            = "SSH-2.0-"
+	OSSH            = "OpenSSH_for_Windows"
 )
 
 var (
@@ -279,7 +280,7 @@ func main() {
 	if err == nil {
 		flag.BoolVar(&O, "O", false, fmt.Sprintf("use ssh from `OpenSSH` - использовать `%s` вместо `%s`\nexample - пример `%s -O`", OpenSSH, Fns[KITTY], Image))
 	} else {
-		Println("OpenSSH", err)
+		Println(OSSH, err)
 	}
 
 	flag.Var(&R, "R", fmt.Sprintf("`remote` port forwarding as - перенос дальнего порта как `ssh -R [bindHost:]bindPort:dialHost:dialPort` or\nremote socks5 proxy  as `ssh -R [bindHost:]bindPort`\nexample - пример `%s -R *:80::80`", Image))

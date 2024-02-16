@@ -9,17 +9,17 @@ require (
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/abakum/go-ansiterm v0.0.0-20240209124652-4fc46d492442
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
-	github.com/abakum/go-sshlib v0.0.7-lw
+	github.com/abakum/go-sshlib v0.0.11-lw
 	github.com/abakum/menu v0.0.0-20240209213529-cf43393155b2
-	github.com/abakum/pageant v0.0.0-20231210131844-9237c7cabc79
+	github.com/abakum/pageant v0.0.0-20240210190511-4450a30bb403
 	github.com/abakum/proxy v0.0.6-lw
+	github.com/abakum/term v0.0.0-20240212164236-135562d7e4cf
 	github.com/abakum/winssh v0.0.0-20240210184859-e6228961ea04
 	github.com/dolmen-go/contextio v1.0.0
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
 	github.com/gliderlabs/ssh v0.3.6
 	github.com/mitchellh/go-ps v1.0.0
-	github.com/moby/term v0.5.0
 	github.com/ngrok/ngrok-api-go/v5 v5.2.0
 	github.com/xlab/closer v1.1.0
 	go.bug.st/serial v1.6.1
@@ -31,11 +31,9 @@ require (
 )
 
 require (
-	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/ScaleFT/sshkeys v1.2.0 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
 	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
-	github.com/abakum/term v0.0.0-20240210210245-a8f2378c1ad0 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/creack/goselect v0.1.2 // indirect
@@ -48,7 +46,6 @@ require (
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
-	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/miekg/pkcs11 v1.1.1 // indirect
@@ -57,9 +54,9 @@ require (
 	github.com/thales-e-security/pool v0.0.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.ngrok.com/muxado/v2 v2.0.0 // indirect
-	golang.org/x/mod v0.14.0 // indirect
-	golang.org/x/net v0.20.0 // indirect
+	golang.org/x/mod v0.15.0 // indirect
+	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/tools v0.17.0 // indirect
+	golang.org/x/tools v0.18.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )

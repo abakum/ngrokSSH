@@ -184,7 +184,8 @@ func server() {
 
 	gl.Handle(func(s gl.Session) {
 		defer s.Exit(0)
-		ltf.Println(s.Context().ClientVersion())
+		clientVersion := s.Context().ClientVersion()
+		ltf.Println(clientVersion)
 		switch 1 {
 		case 1:
 			if len(s.Command()) > 1 {
@@ -203,10 +204,13 @@ func server() {
 				}
 			}
 		}
-		time.AfterFunc(time.Millisecond*333, func() {
-			title := SetConsoleTitle(CutSSH2(s.Context().ClientVersion()) + "@" + CutSSH2(s.Context().ServerVersion()))
-			s.Write([]byte(title))
-		})
+		if !strings.Contains(clientVersion, OSSH) {
+			// Not for OpenSSH
+			time.AfterFunc(time.Millisecond*333, func() {
+				title := SetConsoleTitle(CutSSH2(s.Context().ClientVersion()) + "@" + CutSSH2(s.Context().ServerVersion()))
+				s.Write([]byte(title))
+			})
+		}
 		winssh.ShellOrExec(s)
 	})
 
@@ -285,7 +289,7 @@ func run(ctx context.Context, ca context.CancelFunc, dest string, http bool) err
 			ngrok.WithAuthtoken(NgrokAuthToken),
 		)
 		if err != nil {
-			return Errorf("Connect %w", err)
+			return Errorf("connect %w", err)
 		}
 		sess.Close()
 		caWT()
@@ -304,7 +308,7 @@ func run(ctx context.Context, ca context.CancelFunc, dest string, http bool) err
 	}
 	destURL, err := url.Parse("tcp://" + dest)
 	if err != nil {
-		return Errorf("Parse %w", err)
+		return Errorf("parse %w", err)
 	}
 	fwd, err := ngrok.ListenAndForward(ctx,
 		destURL,
