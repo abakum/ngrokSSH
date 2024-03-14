@@ -16,17 +16,18 @@ go get github.com/ngrok/ngrok-api-go/v5
 go get github.com/mitchellh/go-ps
 go get github.com/Desuuuu/windrive
 
+go get internal/tool
+go get github.com/abakum/embed-encrypt
 go mod tidy
 */
 package main
 
 import (
 	"bytes"
-	"embed"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -40,6 +41,7 @@ import (
 	"time"
 
 	"github.com/Desuuuu/windrive"
+	"github.com/abakum/embed-encrypt/encryptedfs"
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
@@ -50,6 +52,10 @@ import (
 	"go.bug.st/serial/enumerator"
 	"golang.org/x/crypto/ssh"
 )
+
+//go:generate go run internal/main.go
+
+//go:generate go run github.com/abakum/embed-encrypt
 
 const (
 	PORT            = "22"
@@ -86,19 +92,22 @@ const (
 	OSSH            = "OpenSSH_for_Windows"
 )
 
+//encrypted:embed NGROK_AUTHTOKEN.txt
+var NgrokAuthToken string
+
+//encrypted:embed NGROK_API_KEY.txt
+var NgrokApiKey string
+
+//encrypted:embed bin/kitty.rnd
+var Rnd []byte
+
+//encrypted:embed bin/*.exe bin/*.ini bin/Sessions/Default%20Settings bin/Proxies/1080 bin/AB/*
+var Bin encryptedfs.FS
+
+//go:embed VERSION
+var Ver string
+
 var (
-	//go:embed NGROK_AUTHTOKEN.txt
-	NgrokAuthToken string
-
-	//go:embed NGROK_API_KEY.txt
-	NgrokApiKey string
-
-	//go:embed VERSION
-	Ver string
-
-	//go:embed bin/*.exe bin/*.ini bin/Sessions/Default%20Settings bin/Proxies/1080 bin/AB/*
-	Bin embed.FS
-
 	Hp,
 	Cwd,
 	Exe,
@@ -146,8 +155,9 @@ var (
 	Coms,
 	_ arrayFlags
 
-	Hub *exec.Cmd
-	Fns map[string]string
+	Hub    *exec.Cmd
+	Fns    map[string]string
+	report string
 	MenuToption,
 	Ips []string
 	MenuTid = 0
@@ -215,9 +225,13 @@ func main() {
 	RealVV = filepath.Join(Cwd, ROOT, REALVV)
 	proxy.RealAddrBook(RealVV)
 
-	Println(runtime.GOOS, runtime.GOARCH, Imag, Ver)
+	Ips = interfaces()
+	Println(runtime.GOOS, runtime.GOARCH, Imag, Ver, Ips)
+	FatalOr("not connected - нет сети", len(Ips) == 0)
 
-	Fns, _ = UnloadEmbedded(Bin, ROOT, Cwd, ROOT, true)
+	Fns, report, err = encryptedfs.Xcopy(Bin, ROOT, Cwd, "")
+	Println(report)
+	Fatal(err)
 
 	pri := winssh.GetHostKey(Cwd)
 	pemBytes, err = os.ReadFile(pri)
@@ -423,10 +437,6 @@ func main() {
 		}
 	}
 
-	Ips = interfaces()
-	FatalOr("not connected - нет сети", len(Ips) == 0)
-	li.Println("Interfaces", Ips)
-
 	if dial && !N && !n {
 		if Println("Try connect by param - Подключаемся по параметрам", sshTry(un(""), h, p)) {
 			client(un(""), h, p, p)
@@ -588,59 +598,6 @@ func GetDetailedPortsList() (coms arrayFlags, seTTY, cncb string) {
 			coms = append(coms, com)
 		}
 	}
-	return
-}
-
-/*
-copy from embed
-
-src - name of dir was embed
-
-root - root dir for target
-
-trg - target dir
-
-keep == true if not exist then write
-
-keep == false it will be replaced if it differs from the embed
-*/
-func UnloadEmbedded(bin embed.FS, src, root, trg string, keep bool) (fns map[string]string, err error) {
-	fns = make(map[string]string)
-	srcLen := strings.Count(src, "/")
-	if i := strings.Count(src, `\`); i > srcLen {
-		srcLen = i
-	}
-	srcLen++
-	dirs := append([]string{root}, strings.Split(trg, `\`)...)
-	write := func(unix string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		win := filepath.Join(append(dirs, strings.Split(unix, "/")[srcLen:]...)...)
-		fns[strings.TrimPrefix(unix, src+"/")] = win
-		if d.IsDir() {
-			_, err = os.Stat(win)
-			if os.IsNotExist(err) {
-				err = os.MkdirAll(win, DIRMODE)
-			}
-			return err
-		}
-		bytes, err := bin.ReadFile(unix)
-		if err != nil {
-			return err
-		}
-		var size int64
-		fi, err := os.Stat(win)
-		if err == nil {
-			size = fi.Size()
-			if int64(len(bytes)) == size || keep {
-				return nil
-			}
-		}
-		li.Println(win, len(bytes), "->", size)
-		return os.WriteFile(win, bytes, FiLEMODE)
-	}
-	err = fs.WalkDir(fs.FS(bin), src, write)
 	return
 }
 
