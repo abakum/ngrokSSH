@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -32,7 +34,7 @@ const (
 	REALVAB = "vncaddrbook.exe"
 )
 
-func client(user, host, port, listenAddress string) {
+func client(user, host, port, _ string) {
 	const (
 		GEOMETRY = "-geometry=300x600+0+0"
 		AB       = "AB"
@@ -42,9 +44,10 @@ func client(user, host, port, listenAddress string) {
 	VisitAll(title)
 
 	con := &sshlib.Connect{
-		ForwardAgent:    A,
-		TTY:             true,
-		HostKeyCallback: sshlib.HostKeyCallback(KnownKeys...),
+		ForwardAgent: A,
+		TTY:          true,
+		// HostKeyCallback: sshlib.HostKeyCallback(KnownKeys...),
+		HostKeyCallback: CertCheck.CheckHostKey,
 		Version:         banner(),
 	}
 
@@ -53,8 +56,9 @@ func client(user, host, port, listenAddress string) {
 
 	serverVersion := string(con.Client.ServerVersion())
 	Println(serverVersion)
+	IsOSSH = strings.Contains(serverVersion, OSSH)
 	if Cmd != "" {
-		Println(Cmd, con.CommandAnsi(Cmd, !a, strings.Contains(serverVersion, OSSH)))
+		Println(Cmd, con.CommandAnsi(Cmd, !a, IsOSSH))
 		return
 	}
 
@@ -63,24 +67,17 @@ func client(user, host, port, listenAddress string) {
 	count := 0
 	items := []menu.MenuFunc{menu.Static(MENU).Prompt}
 
-	sA := ""
-	if A {
-		sA = " -A"
-	}
+	sA := pp("A", "", !A)
 	items = append(items, func(index int, pressed rune) string {
 		return shellMenu(index, pressed,
 			quote(Exe)+sA+" "+title,
 			con)
 	})
 
-	hostkey := ""
-	if len(KnownKeys) > 0 {
-		hostkey = " -hostkey " + ssh.FingerprintSHA256(KnownKeys[0])
-	}
 	items = append(items, func(index int, pressed rune) string {
 		return mOMenu(index, pressed,
-			quote(Fns[KITTY])+sA+" "+title+hostkey,
-			title, user, host, port, false)
+			fmt.Sprintf(`%s%s %s@%s%s%s`, quote(Fns[KITTY]), sA, user, host, pp("P", port, port == "22"), pp("hostkey", ssh.FingerprintSHA256(KnownKeys[0]), !(len(KnownKeys) > 0 && !IsOSSH))),
+			user, host, port, false)
 	})
 
 	if OpenSSH != "" {
@@ -90,8 +87,8 @@ func client(user, host, port, listenAddress string) {
 		}
 		items = append(items, func(index int, pressed rune) string {
 			return mOMenu(index, pressed,
-				fmt.Sprintf(`%s%s %s@%s -p %s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, port, KnownHosts),
-				title, user, host, port, true)
+				fmt.Sprintf(`%s%s %s@%s%s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), Fns[KNOWN_HOSTS]),
+				user, host, port, true)
 		})
 	}
 
@@ -180,6 +177,13 @@ func client(user, host, port, listenAddress string) {
 	menu.Menu(d, count == 1 && d != '1', true, items...)
 }
 
+func pp(key, val string, empty bool) string {
+	if empty {
+		return ""
+	}
+	return " -" + key + strings.TrimRight(" "+val, " ")
+}
+
 func banner() string {
 	goos := runtime.GOOS
 	if goos == "windows" {
@@ -237,11 +241,11 @@ func mV(index int, pressed rune, opt string) string {
 	return ""
 }
 
-func mOMenu(index int, pressed rune, suf, title, user, host, port string, O bool) string {
+func mOMenu(index int, pressed rune, suf, user, host, port string, O bool) string {
 	r := rune('1' + index)
 	switch pressed {
 	case r:
-		mO(title, user, host, port, O)
+		mO(user, host, port, O)
 		return string(r)
 	case menu.ITEM:
 		return fmt.Sprintf("%c) %s", r, suf)
@@ -249,34 +253,42 @@ func mOMenu(index int, pressed rune, suf, title, user, host, port string, O bool
 	return ""
 }
 
-func mO(title, user, host, port string, O bool) {
-	opts := []string{
-		title,
-		"-title",
-		title,
+func mO(user, host, port string, O bool) {
+	p := "-P"
+	if O {
+		p = "-p"
 	}
-	for _, key := range KnownKeys {
+	opts := []string{
+		"-l",
+		user,
+		host,
+	}
+	if port != "22" {
 		opts = append(opts,
-			"-hostkey",
-			ssh.FingerprintSHA256(key),
+			p,
+			port,
 		)
+	}
+	if A {
+		opts = append(opts, "-A")
 	}
 
 	sshExe := Fns[KITTY]
 	if O {
 		sshExe = OpenSSH
-		opts = []string{
-			"-l",
-			user,
-			host,
-			"-p",
-			port,
+		opts = append(opts,
 			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", KnownHosts),
+			fmt.Sprintf("UserKnownHostsFile=%s", Fns[KNOWN_HOSTS]),
+		)
+	} else {
+		if !IsOSSH {
+			for _, key := range KnownKeys {
+				opts = append(opts,
+					"-hostkey",
+					ssh.FingerprintSHA256(key),
+				)
+			}
 		}
-	}
-	if A {
-		opts = append(opts, "-A")
 	}
 	ki := exec.Command(sshExe, opts...)
 	if O {
@@ -351,9 +363,16 @@ func sshTry(u, h, p string) (err error) {
 	defer rw.Close()
 	ea := agent.NewClient(rw)
 
+	ess, err := ea.Signers()
+	if err != nil {
+		return err
+	}
+	certUser(Signer, ess, Imag, u)
+
 	config := ssh.ClientConfig{
-		Auth:            []ssh.AuthMethod{ssh.PublicKeysCallback(ea.Signers)},
-		HostKeyCallback: sshlib.HostKeyCallback(KnownKeys...),
+		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(ea.Signers)},
+		// HostKeyCallback: sshlib.HostKeyCallback(KnownKeys...),
+		HostKeyCallback: CertCheck.CheckHostKey,
 		User:            u,
 	}
 	client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
@@ -364,8 +383,83 @@ func sshTry(u, h, p string) (err error) {
 	return
 }
 
-func FingerprintSHA256(pubKey ssh.PublicKey) string {
-	return pubKey.Type() + " " + ssh.FingerprintSHA256(pubKey)
+func certUser(caSigner ssh.Signer, signers []ssh.Signer, id string, user string) (sigs []ssh.Signer, err error) {
+	var (
+		mas        ssh.MultiAlgorithmSigner
+		ecdsa      = "ecdsa"
+		perm       = make(map[string]string)
+		sshUserDir = filepath.Join(os.Getenv("USERPROFILE"), ".ssh")
+		caPub      = filepath.Join(sshUserDir, "ca.pub")
+		ca         = caSigner.PublicKey()
+		data       = ssh.MarshalAuthorizedKey(ca)
+	)
+	for _, permit := range []string{
+		"X11-forwarding",
+		"agent-forwarding",
+		"port-forwarding",
+		"pty",
+		"user-rc",
+	} {
+		perm["permit-"+permit] = ""
+	}
+
+	old, err := os.ReadFile(caPub)
+	newCA := err != nil || !bytes.Equal(data, old)
+	if newCA {
+		os.WriteFile(caPub, data, FiLEMODE)
+	}
+
+	for _, idSigner := range signers {
+		pub := idSigner.PublicKey()
+		t := strings.TrimPrefix(pub.Type(), "ssh-")
+		if strings.HasPrefix(t, ecdsa) {
+			t = ecdsa
+		}
+		data = ssh.MarshalAuthorizedKey(pub)
+		idPub := filepath.Join(sshUserDir, fmt.Sprintf("id_%s.pub", t))
+		old, err = os.ReadFile(idPub)
+		newPub := err != nil || !bytes.Equal(data, old)
+		if newPub {
+			os.WriteFile(idPub, data, FiLEMODE)
+		}
+
+		if !(newCA || newPub) {
+			continue
+		}
+
+		//newCA || newPub
+		mas, err = ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner), []string{ca.Type()})
+		if err != nil {
+			return
+		}
+		//ssh-keygen -s ca -I id -n user -V always:forever ~\.ssh\id_*.pub
+		certificate := ssh.Certificate{
+			Key:             idSigner.PublicKey(),
+			CertType:        ssh.UserCert,
+			KeyId:           id,
+			ValidBefore:     ssh.CertTimeInfinity,
+			ValidPrincipals: []string{user},
+			Permissions:     ssh.Permissions{Extensions: perm},
+		}
+		err = certificate.SignCert(rand.Reader, mas)
+		if err != nil {
+			return
+		}
+		// var cSigner ssh.Signer
+		// Println("id", FingerprintSHA256(certificate.Key))
+		// Println("ca", FingerprintSHA256(certificate.SignatureKey))
+		// cSigner, err = ssh.NewCertSigner(&certificate, idSigner)
+		// if err != nil {
+		// 	return
+		// }
+		// Println("id", FingerprintSHA256(certificate.Key))
+		// Println("ca", FingerprintSHA256(certificate.SignatureKey))
+		// sigs = append(sigs, cSigner)
+		data = ssh.MarshalAuthorizedKey(&certificate)
+		idCertificate := filepath.Join(sshUserDir, fmt.Sprintf("id_%s-cert.pub", t))
+		err = os.WriteFile(idCertificate, data, FiLEMODE)
+	}
+	return
 }
 
 func MarshalAuthorizedKey(key ssh.PublicKey) string {

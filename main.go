@@ -24,7 +24,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	_ "embed"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -42,6 +47,7 @@ import (
 
 	"github.com/Desuuuu/windrive"
 	"github.com/abakum/embed-encrypt/encryptedfs"
+	"github.com/abakum/go-sshlib"
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
@@ -53,7 +59,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-//go:generate go run internal/main.go
+//go:generate go run bin/main.go
 
 //go:generate go run github.com/abakum/embed-encrypt
 
@@ -80,7 +86,7 @@ const (
 	MENU            = "Choose target for console - выбери цель подключения консоли"
 	FiLEMODE        = 0644
 	DIRMODE         = 0755
-	KNOWN_HOSTS     = "known_hosts.ini"     //created on first run
+	KNOWN_HOSTS     = "known_hosts.ini"
 	AUTHORIZED_KEYS = "authorized_keys.ini" //created on first run
 	TOR             = time.Second * 15      //reconnect TO
 	TOW             = time.Second * 5       //watch TO
@@ -99,7 +105,7 @@ var NgrokAuthToken string
 var NgrokApiKey string
 
 //encrypted:embed bin/kitty.rnd
-var Rnd []byte
+var CA []byte
 
 //encrypted:embed bin/*.exe bin/*.ini bin/Sessions/Default%20Settings bin/Proxies/1080 bin/AB/*
 var Bin encryptedfs.FS
@@ -123,7 +129,6 @@ var (
 	S,
 	OpenSSH,
 	AuthorizedKeysIni,
-	KnownHosts,
 	Crypt,
 	RealVV,
 	Cmd,
@@ -145,6 +150,7 @@ var (
 	dial,
 	serv,
 	PressEnter,
+	IsOSSH,
 	_ bool
 
 	L,
@@ -164,11 +170,11 @@ var (
 	Signer  gl.Signer
 	KnownKeys,
 	AuthorizedKeys []ssh.PublicKey
-	Drives   []*windrive.Drive
-	HardExe  = true // for linux symlink
-	Once     sync.Once
-	pemBytes []byte
-	Delay    = DELAY
+	Drives    []*windrive.Drive
+	HardExe   = true // for linux symlink
+	Once      sync.Once
+	Delay     = DELAY
+	CertCheck *ssh.CertChecker
 )
 
 func main() {
@@ -230,28 +236,18 @@ func main() {
 	FatalOr("not connected - нет сети", len(Ips) == 0)
 
 	Fns, report, err = encryptedfs.Xcopy(Bin, ROOT, Cwd, "")
-	Println(report)
-	Fatal(err)
-
-	pri := winssh.GetHostKey(Cwd)
-	pemBytes, err = os.ReadFile(pri)
-	if err != nil {
-		Signer, err = winssh.GenerateSigner(pri)
-	} else {
-		Signer, err = ssh.ParsePrivateKey(pemBytes)
+	if report != "" {
+		Println(report)
 	}
 	Fatal(err)
 
-	pubKey := Signer.PublicKey()
-	Println("HostKey", FingerprintSHA256(pubKey))
-	rest := append([]byte("* "), ssh.MarshalAuthorizedKey(pubKey)...)
+	// for server
+	key, err := x509.ParsePKCS8PrivateKey(CA)
+	Fatal(err)
+	Signer, err = ssh.NewSignerFromKey(key)
+	Fatal(err)
 
-	KnownHosts = filepath.Join(Cwd, ROOT, KNOWN_HOSTS)
-	_, err = os.Stat(KnownHosts)
-	if os.IsNotExist(err) {
-		Println("WriteFile", KnownHosts, os.WriteFile(KnownHosts, rest, FiLEMODE))
-	}
-
+	// for server once
 	AuthorizedKeysIni = filepath.Join(Cwd, ROOT, AUTHORIZED_KEYS)
 	for _, name := range winssh.GetUserKeysPaths(Cwd, AuthorizedKeysIni) {
 		AuthorizedKeys = FileToAuthorized(name, AuthorizedKeys)
@@ -261,24 +257,37 @@ func main() {
 		Println("WriteFile", AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, MarshalAuthorizedKeys(AuthorizedKeys...), FiLEMODE))
 	}
 
-	rest, err = os.ReadFile(KnownHosts)
+	// for client
+	rest, err := os.ReadFile(Fns[KNOWN_HOSTS])
 	if err != nil {
 		Println(err)
 	} else {
 		var (
+			marker string
 			hosts  []string
 			pubKey ssh.PublicKey
 		)
 		for {
-			_, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
+			marker, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
 			if err != nil {
 				break
 			}
-			if len(hosts) > 0 && hosts[0] == "*" {
-				Println(FingerprintSHA256(pubKey))
+			if marker == "" && len(hosts) > 0 && hosts[0] == "*" {
+				Println(Fns[KNOWN_HOSTS], FingerprintSHA256(pubKey))
 				KnownKeys = append(KnownKeys, pubKey)
 			}
 		}
+	}
+
+	hostAuthCallback := func() func(ssh.PublicKey, string) bool {
+		return func(p ssh.PublicKey, addr string) bool {
+			return bytes.Equal(p.Marshal(), Signer.PublicKey().Marshal())
+		}
+	}
+
+	CertCheck = &ssh.CertChecker{
+		IsHostAuthority: hostAuthCallback(),
+		HostKeyFallback: sshlib.HostKeyCallback(KnownKeys...),
 	}
 
 	Coms, So, Cncb = GetDetailedPortsList()
@@ -706,4 +715,61 @@ func RealReset() {
 		Println("RealSet", "", "")
 		return
 	}
+}
+
+// like gl.GenerateSigner plus write key to files
+func GenerateSigner(pri string) (gl.Signer, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	Bytes, err := x509.MarshalPKCS8PrivateKey(key)
+	if err == nil {
+		data := pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: Bytes,
+		})
+		if data != nil {
+			os.WriteFile(pri, data, FiLEMODE)
+		}
+
+		Bytes, err = x509.MarshalPKIXPublicKey(&key.PublicKey)
+		if err == nil {
+			data := pem.EncodeToMemory(&pem.Block{
+				Type:  "PUBLIC KEY",
+				Bytes: Bytes,
+			})
+
+			os.WriteFile(pri+".pub", data, FiLEMODE)
+		}
+	}
+
+	return ssh.NewSignerFromKey(key)
+}
+
+// get one key
+func GetHostKey(ssh string) (pri string) {
+	for _, dir := range []string{
+		filepath.Join(os.Getenv("ALLUSERSPROFILE"), "ssh"),
+		ssh,
+	} {
+		for _, key := range []string{
+			"ssh_host_ecdsa_key",
+			"ssh_host_ed25519_key",
+			"ssh_host_rsa_key",
+		} {
+			pri = filepath.Join(dir, key)
+			ltf.Println(pri)
+			_, err := os.Stat(pri)
+			if err == nil {
+				return
+			}
+		}
+	}
+	return
+}
+
+func FingerprintSHA256(pubKey ssh.PublicKey) string {
+	return pubKey.Type() + " " + ssh.FingerprintSHA256(pubKey)
 }
