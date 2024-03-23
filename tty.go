@@ -155,7 +155,7 @@ func kiRun(index int, pressed rune, b string) string {
 			"COM" + So,
 		}
 		Println("cmdFromClipBoard", command(&opts))
-		ki := exec.Command(Fns[KITTY], opts...)
+		ki := exec.Command(Fns[XTTY], opts...)
 
 		ltf.Println(cmd("Run", ki))
 		Println(cmd("Close", ki), ki.Run())

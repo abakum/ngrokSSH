@@ -64,21 +64,22 @@ import (
 //go:generate go run github.com/abakum/embed-encrypt
 
 const (
-	PORT            = "22"
-	ALL             = "0.0.0.0"
-	LH              = "127.0.0.1"
-	RFC2217         = 2217
-	RFB             = 5900
-	EMULATOR        = "com0com - serial port emulator"
-	COM0COM         = "https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download"
-	ROOT            = "bin"
-	LIMIT           = "1"
-	ITO             = "10"
-	XO              = "on"
-	DELAY           = "0.05"
-	HUB4COM         = "hub4com.exe"
-	SSHD            = "sshd.exe"
-	KITTY           = "kitty_portable.exe"
+	PORT     = "22"
+	ALL      = "0.0.0.0"
+	LH       = "127.0.0.1"
+	RFC2217  = 2217
+	RFB      = 5900
+	EMULATOR = "com0com - serial port emulator"
+	COM0COM  = "https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download"
+	ROOT     = "bin"
+	LIMIT    = "1"
+	ITO      = "10"
+	XO       = "on"
+	DELAY    = "0.05"
+	HUB4COM  = "hub4com.exe"
+	SSHD     = "sshd.exe"
+	// XTTY            = "kitty_portable.exe"
+	XTTY            = "putty.exe"
 	REALVV          = "vncviewer.exe"
 	CGIV            = "-v"
 	CGIT            = "-t"
@@ -151,6 +152,7 @@ var (
 	serv,
 	PressEnter,
 	IsOSSH,
+	IsCert,
 	_ bool
 
 	L,
@@ -167,14 +169,16 @@ var (
 	MenuToption,
 	Ips []string
 	MenuTid = 0
-	Signer  gl.Signer
+	Signer  gl.Signer //ca
 	KnownKeys,
 	AuthorizedKeys []ssh.PublicKey
-	Drives    []*windrive.Drive
-	HardExe   = true // for linux symlink
-	Once      sync.Once
-	Delay     = DELAY
-	CertCheck *ssh.CertChecker
+	Drives      []*windrive.Drive
+	HardExe     = true // for linux symlink
+	Once        sync.Once
+	Delay       = DELAY
+	CertCheck   *ssh.CertChecker
+	AuthMethods []ssh.AuthMethod
+	Signers     []ssh.Signer
 )
 
 func main() {
@@ -263,30 +267,23 @@ func main() {
 		Println(err)
 	} else {
 		var (
-			marker string
 			hosts  []string
 			pubKey ssh.PublicKey
 		)
 		for {
-			marker, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
+			_, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
 			if err != nil {
 				break
 			}
-			if marker == "" && len(hosts) > 0 && hosts[0] == "*" {
+			if len(hosts) > 0 && hosts[0] == "*" {
 				Println(Fns[KNOWN_HOSTS], FingerprintSHA256(pubKey))
 				KnownKeys = append(KnownKeys, pubKey)
 			}
 		}
 	}
 
-	hostAuthCallback := func() func(ssh.PublicKey, string) bool {
-		return func(p ssh.PublicKey, addr string) bool {
-			return bytes.Equal(p.Marshal(), Signer.PublicKey().Marshal())
-		}
-	}
-
 	CertCheck = &ssh.CertChecker{
-		IsHostAuthority: hostAuthCallback(),
+		IsHostAuthority: func(p ssh.PublicKey, _ string) bool { return gl.KeysEqual(p, Signer.PublicKey()) },
 		HostKeyFallback: sshlib.HostKeyCallback(KnownKeys...),
 	}
 
@@ -294,18 +291,16 @@ func main() {
 	Cncb = `\\.\` + Cncb
 
 	flag.BoolVar(&A, "A", false, fmt.Sprintf("authentication `agent` forwarding as - перенос авторизации как `ssh -A`\nexample - пример `%s -A`", Image))
-
 	flag.Var(&C, "C", fmt.Sprintf("`COM` serial port for daemon - последовательный порт для сервера `hub4com`\nexample - пример `%s -C 7`", Image))
 	flag.BoolVar(&D, "D", false, fmt.Sprintf("force LAN mode for `daemon` - режим локального сервера\nexample - пример `%s -D` or `%s @`", Image, Image))
 	flag.Var(&L, "L", fmt.Sprintf("`local` port forwarding as - перенос ближнего порта как `ssh -L [bindHost:]bindPort[:dialHost:dialPort]` or\nlocal socks5 proxy as `ssh -D [bindHost:]bindPort`\nexample - пример `%s -L 80:0.0.0.0:80`", Image))
 	flag.BoolVar(&N, "N", false, fmt.Sprintf("force `ngrok` mode - подключаться через туннель\nexample - пример `%s -N` or `%s :`", Image, Image))
 	OpenSSH, err = exec.LookPath("ssh")
 	if err == nil {
-		flag.BoolVar(&O, "O", false, fmt.Sprintf("use ssh from `OpenSSH` - использовать `%s` вместо `%s`\nexample - пример `%s -O`", OpenSSH, Fns[KITTY], Image))
+		flag.BoolVar(&O, "O", false, fmt.Sprintf("use ssh from `OpenSSH` - использовать `%s` вместо `%s`\nexample - пример `%s -O`", OpenSSH, Fns[XTTY], Image))
 	} else {
 		Println(OSSH, err)
 	}
-
 	flag.Var(&R, "R", fmt.Sprintf("`remote` port forwarding as - перенос дальнего порта как `ssh -R [bindHost:]bindPort:dialHost:dialPort` or\nremote socks5 proxy  as `ssh -R [bindHost:]bindPort`\nexample - пример `%s -R *:80::80`", Image))
 	flag.StringVar(&S, "S", SOCKS5, fmt.Sprintf("port for proxy - порт для прокси `Socks5`\nexample - пример `%s -S 8080`", Image))
 	flag.Var(&T, "T", fmt.Sprintf("local port forwarding for serial console over - перенос ближнего порта для последовательной консоли через `telnet` RFC2217 like -L\nexample - пример `%s -T 192.168.0.1:7000`", Image))
@@ -315,7 +310,6 @@ func main() {
 		Drives, _ = windrive.List()
 		HardExe = HardPath(Drives, Exe)
 	}
-
 	a = menu.IsAnsi()
 	flag.BoolVar(&a, "a", a, fmt.Sprintf("`ansi` sequence enabled console - консоль поддерживает ansi последовательности\nexample - пример `%s -a` or `%s -a=false`", Image, Image))
 	flag.StringVar(&Baud, "b", B9600, fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 115200` or `%s -b 1`", Image, Image))
@@ -446,6 +440,8 @@ func main() {
 		}
 	}
 
+	// AuthMethods = getAuths(Signer, Imag, Imag)
+	Signers = getSigners(Signer, Imag, Imag)
 	if dial && !N && !n {
 		if Println("Try connect by param - Подключаемся по параметрам", sshTry(un(""), h, p)) {
 			client(un(""), h, p, p)

@@ -48,8 +48,8 @@ func main() {
 	caPub := ssh.MarshalAuthorizedKey(PublicKey)
 	bb.Write(caPub)
 
-	bb.WriteString("* ")
-	bb.Write(caPub)
+	// bb.WriteString("* ")
+	// bb.Write(caPub)
 
 	err = os.WriteFile(filepath.Join(wd, ROOT, KNOWN_HOSTS), bb.Bytes(), FiLEMODE)
 	Panic(err)

@@ -27,6 +27,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 const (
@@ -51,8 +52,8 @@ func client(user, host, port, _ string) {
 		Version:         banner(),
 	}
 
-	con.ConnectSshAgent()
-	Fatal(con.CreateClient(host, port, user, nil))
+	// con.ConnectSshAgent()
+	Fatal(con.CreateClient(host, port, user, AuthMethods))
 
 	serverVersion := string(con.Client.ServerVersion())
 	Println(serverVersion)
@@ -75,8 +76,20 @@ func client(user, host, port, _ string) {
 	})
 
 	items = append(items, func(index int, pressed rune) string {
+		// hostkey := ""
+		// if len(KnownKeys) > 0 && !IsOSSH {
+		// 	hostkey = ssh.FingerprintSHA256(KnownKeys[0])
+		// }
 		return mOMenu(index, pressed,
-			fmt.Sprintf(`%s%s %s@%s%s%s`, quote(Fns[KITTY]), sA, user, host, pp("P", port, port == "22"), pp("hostkey", ssh.FingerprintSHA256(KnownKeys[0]), !(len(KnownKeys) > 0 && !IsOSSH))),
+			fmt.Sprintf(`%s%s%s %s@%s%s`,
+				quote(Fns[XTTY]),
+				sA,
+				pp("load", Imag, !(IsCert && IsOSSH)),
+				user,
+				host,
+				pp("P", port, port == "22"),
+				// pp("hostkey", hostkey, hostkey == ""),
+			),
 			user, host, port, false)
 	})
 
@@ -258,37 +271,44 @@ func mO(user, host, port string, O bool) {
 	if O {
 		p = "-p"
 	}
-	opts := []string{
+	opts := []string{}
+	if A {
+		opts = append(opts, "-A")
+	}
+	if !O && IsCert && IsOSSH {
+		opts = append(opts,
+			"-load",
+			Imag,
+		)
+	}
+	opts = append(opts,
 		"-l",
 		user,
 		host,
-	}
+	)
 	if port != "22" {
 		opts = append(opts,
 			p,
 			port,
 		)
 	}
-	if A {
-		opts = append(opts, "-A")
-	}
 
-	sshExe := Fns[KITTY]
+	sshExe := Fns[XTTY]
 	if O {
 		sshExe = OpenSSH
 		opts = append(opts,
 			"-o",
 			fmt.Sprintf("UserKnownHostsFile=%s", Fns[KNOWN_HOSTS]),
 		)
-	} else {
-		if !IsOSSH {
-			for _, key := range KnownKeys {
-				opts = append(opts,
-					"-hostkey",
-					ssh.FingerprintSHA256(key),
-				)
-			}
-		}
+		// } else {
+		// 	if !IsOSSH {
+		// 		for _, key := range KnownKeys {
+		// 			opts = append(opts,
+		// 				"-hostkey",
+		// 				ssh.FingerprintSHA256(key),
+		// 			)
+		// 		}
+		// 	}
 	}
 	ki := exec.Command(sshExe, opts...)
 	if O {
@@ -356,42 +376,32 @@ func ska(con *sshlib.Connect) {
 
 func sshTry(u, h, p string) (err error) {
 	ltf.Printf("%s@%s:%s\n", u, h, p)
-	rw, err := NewConn()
-	if err != nil {
-		return
+	// Println("SignersLen", len(Signers))
+	for _, signer := range Signers {
+		config := ssh.ClientConfig{
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+			HostKeyCallback: CertCheck.CheckHostKey,
+			User:            u,
+		}
+		client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
+		if err == nil {
+			client.Close()
+			// Println(i, FingerprintSHA256(signer.PublicKey()))
+			IsCert = strings.HasSuffix(signer.PublicKey().Type(), "-cert-v01@openssh.com")
+			AuthMethods = config.Auth
+			return nil
+		}
 	}
-	defer rw.Close()
-	ea := agent.NewClient(rw)
-
-	ess, err := ea.Signers()
-	if err != nil {
-		return err
-	}
-	certUser(Signer, ess, Imag, u)
-
-	config := ssh.ClientConfig{
-		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(ea.Signers)},
-		// HostKeyCallback: sshlib.HostKeyCallback(KnownKeys...),
-		HostKeyCallback: CertCheck.CheckHostKey,
-		User:            u,
-	}
-	client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
-	if err != nil {
-		return
-	}
-	client.Close()
 	return
 }
 
-func certUser(caSigner ssh.Signer, signers []ssh.Signer, id string, user string) (sigs []ssh.Signer, err error) {
+func getSigners(caSigner ssh.Signer, id string, user string) (sigs []ssh.Signer) { //auths []ssh.AuthMethod
 	var (
-		mas        ssh.MultiAlgorithmSigner
-		ecdsa      = "ecdsa"
-		perm       = make(map[string]string)
-		sshUserDir = filepath.Join(os.Getenv("USERPROFILE"), ".ssh")
-		caPub      = filepath.Join(sshUserDir, "ca.pub")
-		ca         = caSigner.PublicKey()
-		data       = ssh.MarshalAuthorizedKey(ca)
+		// sigs  []ssh.Signer
+		ecdsa = "ecdsa"
+		perm  = make(map[string]string)
+		ca    = caSigner.PublicKey()
+		data  = ssh.MarshalAuthorizedKey(ca)
 	)
 	for _, permit := range []string{
 		"X11-forwarding",
@@ -403,34 +413,62 @@ func certUser(caSigner ssh.Signer, signers []ssh.Signer, id string, user string)
 		perm["permit-"+permit] = ""
 	}
 
-	old, err := os.ReadFile(caPub)
-	newCA := err != nil || !bytes.Equal(data, old)
-	if newCA {
-		os.WriteFile(caPub, data, FiLEMODE)
+	signers := []ssh.Signer{}
+	rw, err := NewConn()
+	if err == nil {
+		defer rw.Close()
+		ea := agent.NewClient(rw)
+		signers, err = ea.Signers()
 	}
+	if len(signers) == 0 {
+		Println(fmt.Errorf("no keys from agent %v", err))
+	}
+	signers = append([]ssh.Signer{caSigner}, signers...)
 
-	for _, idSigner := range signers {
+	for i, idSigner := range signers {
+		sigs = append(sigs, idSigner)
+
 		pub := idSigner.PublicKey()
+
+		sshUserDir := filepath.Join(os.Getenv("USERPROFILE"), ".ssh")
 		t := strings.TrimPrefix(pub.Type(), "ssh-")
 		if strings.HasPrefix(t, ecdsa) {
 			t = ecdsa
 		}
+		pref := fmt.Sprintf("id_%s", t)
+
+		if i == 0 { // ca
+			sshUserDir = filepath.Join(Cwd, ROOT)
+			pref = "ca"
+		}
+
 		data = ssh.MarshalAuthorizedKey(pub)
-		idPub := filepath.Join(sshUserDir, fmt.Sprintf("id_%s.pub", t))
-		old, err = os.ReadFile(idPub)
+		idPub := filepath.Join(sshUserDir, pref+".pub")
+		old, err := os.ReadFile(idPub)
 		newPub := err != nil || !bytes.Equal(data, old)
+		newCA := newPub && i == 0
 		if newPub {
-			os.WriteFile(idPub, data, FiLEMODE)
+			Println(os.WriteFile(idPub, data, FiLEMODE))
+			if i == 0 {
+				// for ...they_verify_me_by_certificate
+				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
+					`SOFTWARE\SimonTatham\PuTTY\SshHostCAs\ngrokSSH`,
+					registry.CREATE_SUB_KEY|registry.SET_VALUE)
+				if err == nil {
+					rk.SetStringValue("PublicKey", strings.TrimSpace(strings.TrimPrefix(string(data), pub.Type())))
+					rk.SetStringValue("Validity", "*")
+					rk.SetDWordValue("PermitRSASHA1", 0)
+					rk.SetDWordValue("PermitRSASHA256", 1)
+					rk.SetDWordValue("PermitRSASHA512", 1)
+					rk.Close()
+				} else {
+					Println(err)
+				}
+			}
 		}
-
-		if !(newCA || newPub) {
-			continue
-		}
-
-		//newCA || newPub
-		mas, err = ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner), []string{ca.Type()})
+		mas, err := ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner), []string{ca.Type()})
 		if err != nil {
-			return
+			continue
 		}
 		//ssh-keygen -s ca -I id -n user -V always:forever ~\.ssh\id_*.pub
 		certificate := ssh.Certificate{
@@ -441,25 +479,41 @@ func certUser(caSigner ssh.Signer, signers []ssh.Signer, id string, user string)
 			ValidPrincipals: []string{user},
 			Permissions:     ssh.Permissions{Extensions: perm},
 		}
-		err = certificate.SignCert(rand.Reader, mas)
-		if err != nil {
-			return
+		if certificate.SignCert(rand.Reader, mas) != nil {
+			continue
 		}
-		// var cSigner ssh.Signer
-		// Println("id", FingerprintSHA256(certificate.Key))
-		// Println("ca", FingerprintSHA256(certificate.SignatureKey))
-		// cSigner, err = ssh.NewCertSigner(&certificate, idSigner)
-		// if err != nil {
-		// 	return
-		// }
-		// Println("id", FingerprintSHA256(certificate.Key))
-		// Println("ca", FingerprintSHA256(certificate.SignatureKey))
-		// sigs = append(sigs, cSigner)
-		data = ssh.MarshalAuthorizedKey(&certificate)
-		idCertificate := filepath.Join(sshUserDir, fmt.Sprintf("id_%s-cert.pub", t))
-		err = os.WriteFile(idCertificate, data, FiLEMODE)
+
+		certSigner, err := ssh.NewCertSigner(&certificate, idSigner)
+		if err != nil {
+			continue
+		}
+		sigs = append(sigs, certSigner)
+
+		if newCA || newPub {
+			os.MkdirAll(sshUserDir, 0700)
+			certPub := filepath.Join(sshUserDir, pref+"-cert.pub")
+			err = os.WriteFile(certPub,
+				ssh.MarshalAuthorizedKey(&certificate),
+				FiLEMODE)
+			if err == nil && i == 1 {
+				// for I_verify_them_by_certificate_they_verify_me_by_certificate
+				// PuTTY -load ngrokSSH user@host
+				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
+					`SOFTWARE\SimonTatham\PuTTY\Sessions\ngrokSSH`,
+					registry.CREATE_SUB_KEY|registry.SET_VALUE)
+				if err == nil {
+					rk.SetStringValue("DetachedCertificate", certPub)
+					rk.Close()
+				} else {
+					Println(err)
+				}
+			} else {
+				Println(err)
+			}
+		}
 	}
 	return
+	// return append(auths, ssh.PublicKeys(sigs...))
 }
 
 func MarshalAuthorizedKey(key ssh.PublicKey) string {

@@ -171,7 +171,8 @@ func server() {
 	}
 
 	// next for server key
-	server.AddHostKey(Signer)
+	// server.AddHostKey(Signer)
+	server.AddHostKey(certSigner(Signer, Signer, Imag)) //selfsigned ca
 	// before for server key
 
 	// next for client keys
@@ -179,8 +180,27 @@ func server() {
 		Println("User", ctx.User(), "from", ctx.RemoteAddr())
 		Println("key", FingerprintSHA256(key))
 
-		AuthorizedKeys = KeyFromClient(key, AuthorizedKeys) //from first user
-		return Authorized(key, AuthorizedKeys)
+		cert, ok := key.(*ssh.Certificate)
+		if !ok {
+			AuthorizedKeys = KeyFromClient(key, AuthorizedKeys) //from first user
+			return Authorized(key, AuthorizedKeys)
+		}
+		// next for certificate of client
+		if cert.CertType != ssh.UserCert {
+			Println(fmt.Errorf("ssh: cert has type %d", cert.CertType))
+			return Authorized(key, AuthorizedKeys)
+		}
+		if !gl.KeysEqual(cert.SignatureKey, Signer.PublicKey()) {
+			Println(fmt.Errorf("ssh: certificate signed by unrecognized authority %s", FingerprintSHA256(cert.SignatureKey)))
+			return Authorized(key, AuthorizedKeys)
+		}
+		if err := CertCheck.CheckCert(Imag, cert); err != nil { //ctx.User()
+			Println(err)
+			return Authorized(key, AuthorizedKeys)
+		}
+		//  cert.Permissions
+		return true
+
 	})
 
 	server.SetOption(publicKeyOption)
@@ -238,6 +258,28 @@ func server() {
 	}()
 	go established(ctxRWE, Image)
 	Println("ListenAndServe", server.ListenAndServe())
+}
+
+func certSigner(caSigner, hostSigner ssh.Signer, id string) ssh.Signer {
+	mas, err := ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner), []string{caSigner.PublicKey().Type()})
+	if err != nil {
+		return hostSigner
+	}
+	certificate := ssh.Certificate{
+		Key:         hostSigner.PublicKey(),
+		CertType:    ssh.HostCert,
+		KeyId:       id,
+		ValidBefore: ssh.CertTimeInfinity,
+	}
+	err = certificate.SignCert(rand.Reader, mas)
+	if err != nil {
+		return hostSigner
+	}
+	certSigner, err := ssh.NewCertSigner(&certificate, hostSigner)
+	if err != nil {
+		return hostSigner
+	}
+	return certSigner
 }
 
 func certHost(caSigner ssh.Signer, id string) (err error) {
