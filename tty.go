@@ -80,6 +80,9 @@ func tty(hphp ...string) {
 		if index == -1 {
 			return menu.SELECT
 		}
+		if !IsKiTTY {
+			return "Choose baud - Выбери скорость"
+		}
 		if Delay != DELAY {
 			return "Choose baud and seconds delay for Ctrl-F2 or commands from clipboard\n" +
 				"Выбери скорость и задержку в секундах для Ctrl-F2 или команд из буфера"
@@ -87,33 +90,41 @@ func tty(hphp ...string) {
 		return "Choose baud and seconds delay for Ctrl-F2\n" +
 			"Выбери скорость и задержку в секундах для Ctrl-F2"
 	}}
-	items = append(items, func(index int, pressed rune) string {
-		return setDelay(index, pressed, DELAY)
-	})
+	if IsKiTTY {
+		items = append(items, func(index int, pressed rune) string {
+			return setDelay(index, pressed, DELAY)
+		})
+	}
 	items = append(items, func(index int, pressed rune) string {
 		return kiRun(index, pressed, "115200")
 	})
-	items = append(items, func(index int, pressed rune) string {
-		return setDelay(index, pressed, "0.2")
-	})
+	if IsKiTTY {
+		items = append(items, func(index int, pressed rune) string {
+			return setDelay(index, pressed, "0.2")
+		})
+	}
 	items = append(items, func(index int, pressed rune) string {
 		return kiRun(index, pressed, "38400")
 	})
-	items = append(items, func(index int, pressed rune) string {
-		return setDelay(index, pressed, "0.4")
-	})
+	if IsKiTTY {
+		items = append(items, func(index int, pressed rune) string {
+			return setDelay(index, pressed, "0.4")
+		})
+	}
 	items = append(items, func(index int, pressed rune) string {
 		return kiRun(index, pressed, "57600")
 	})
-	items = append(items, func(index int, pressed rune) string {
-		return setDelay(index, pressed, "0.6")
-	})
-	items = append(items, func(index int, pressed rune) string {
-		return setDelay(index, pressed, "0.7")
-	})
-	items = append(items, func(index int, pressed rune) string {
-		return setDelay(index, pressed, "0.08")
-	})
+	if IsKiTTY {
+		items = append(items, func(index int, pressed rune) string {
+			return setDelay(index, pressed, "0.6")
+		})
+		items = append(items, func(index int, pressed rune) string {
+			return setDelay(index, pressed, "0.7")
+		})
+		items = append(items, func(index int, pressed rune) string {
+			return setDelay(index, pressed, "0.08")
+		})
+	}
 	items = append(items, func(index int, pressed rune) string {
 		return kiRun(index, pressed, B9600)
 	})
@@ -139,6 +150,9 @@ func setDelay(index int, pressed rune, d string) string {
 
 func kiRun(index int, pressed rune, b string) string {
 	r := rune('0' + index)
+	if !IsKiTTY {
+		r = rune(b[0])
+	}
 	switch pressed {
 	case menu.MARKED:
 		if Baud == b {
@@ -180,6 +194,9 @@ func SetValue(section *ini.Section, key, val string) (set bool) {
 }
 
 func command(opts *[]string) error {
+	if !IsKiTTY {
+		return nil
+	}
 	ini.PrettyFormat = false
 	iniFile, err := ini.LoadSources(ini.LoadOptions{
 		IgnoreInlineComment: false,
@@ -187,7 +204,7 @@ func command(opts *[]string) error {
 	if err != nil {
 		return err
 	}
-	section := iniFile.Section("KiTTY")
+	section := iniFile.Section(KiTTY)
 	ok := SetValue(section, "commanddelay", Delay)
 	if ok {
 		err = iniFile.SaveTo(Fns[KITTYINI])

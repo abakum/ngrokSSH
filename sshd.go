@@ -372,6 +372,7 @@ AuthorizedPrincipalsFile __PROGRAMDATA__/ssh/authorized_principals
 HostCertificate __PROGRAMDATA__/ssh/host_certificate
 `
 	err = os.WriteFile(include, []byte(s), FiLEMODE)
+	Println("or insert to __PROGRAMDATA__/ssh/sshd_config line `I_verify_them_by_certificate_they_verify_me_by_certificate`")
 	return
 }
 

@@ -97,6 +97,7 @@ const (
 	MARK            = '('
 	SSH2            = "SSH-2.0-"
 	OSSH            = "OpenSSH_for_Windows"
+	KiTTY           = "KiTTY"
 )
 
 //encrypted:embed NGROK_AUTHTOKEN.txt
@@ -154,6 +155,7 @@ var (
 	IsOSSH,
 	IsCert,
 	_ bool
+	IsKiTTY = strings.Contains(XTTY, strings.ToLower(KiTTY))
 
 	L,
 	R,
