@@ -47,7 +47,6 @@ import (
 
 	"github.com/Desuuuu/windrive"
 	"github.com/abakum/embed-encrypt/encryptedfs"
-	"github.com/abakum/go-sshlib"
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 	"github.com/abakum/winssh"
@@ -79,25 +78,23 @@ const (
 	HUB4COM  = "hub4com.exe"
 	SSHD     = "sshd.exe"
 	// XTTY            = "kitty_portable.exe"
-	XTTY            = "putty.exe"
-	REALVV          = "vncviewer.exe"
-	CGIV            = "-v"
-	CGIT            = "-t"
-	CGIR            = "-r"
-	MENU            = "Choose target for console - выбери цель подключения консоли"
-	FiLEMODE        = 0644
-	DIRMODE         = 0755
-	KNOWN_HOSTS     = "known_hosts.ini"
-	AUTHORIZED_KEYS = "authorized_keys.ini" //created on first run
-	TOR             = time.Second * 15      //reconnect TO
-	TOW             = time.Second * 5       //watch TO
-	SOCKS5          = "1080"
-	HTTPX           = "3128"
-	B9600           = "9600"
-	MARK            = '('
-	SSH2            = "SSH-2.0-"
-	OSSH            = "OpenSSH_for_Windows"
-	KiTTY           = "KiTTY"
+	XTTY     = "putty.exe"
+	REALVV   = "vncviewer.exe"
+	CGIV     = "-v"
+	CGIT     = "-t"
+	CGIR     = "-r"
+	MENU     = "Choose target for console - выбери цель подключения консоли"
+	FILEMODE = 0644
+	DIRMODE  = 0755
+	TOR      = time.Second * 15 //reconnect TO
+	TOW      = time.Second * 5  //watch TO
+	SOCKS5   = "1080"
+	HTTPX    = "3128"
+	B9600    = "9600"
+	MARK     = '('
+	SSH2     = "SSH-2.0-"
+	OSSH     = "OpenSSH_for_Windows"
+	KiTTY    = "KiTTY"
 )
 
 //encrypted:embed NGROK_AUTHTOKEN.txt
@@ -109,7 +106,7 @@ var NgrokApiKey string
 //encrypted:embed bin/kitty.rnd
 var CA []byte
 
-//encrypted:embed bin/*.exe bin/*.ini bin/Sessions/Default%20Settings bin/Proxies/1080 bin/AB/*
+//encrypted:embed bin/*.exe bin/Sessions/Default%20Settings bin/AB/*
 var Bin encryptedfs.FS
 
 //go:embed VERSION
@@ -130,10 +127,10 @@ var (
 	Baud,
 	S,
 	OpenSSH,
-	AuthorizedKeysIni,
 	Crypt,
 	RealVV,
 	Cmd,
+	UserKnownHostsFile,
 	_ string
 
 	NgrokOnline,
@@ -247,46 +244,18 @@ func main() {
 	}
 	Fatal(err)
 
-	// for server
 	key, err := x509.ParsePKCS8PrivateKey(CA)
 	Fatal(err)
 	Signer, err = ssh.NewSignerFromKey(key)
 	Fatal(err)
 
-	// for server once
-	AuthorizedKeysIni = filepath.Join(Cwd, ROOT, AUTHORIZED_KEYS)
-	for _, name := range winssh.GetUserKeysPaths(Cwd, AuthorizedKeysIni) {
-		AuthorizedKeys = FileToAuthorized(name, AuthorizedKeys)
-	}
-	_, err = os.Stat(AuthorizedKeysIni)
-	if os.IsNotExist(err) && len(AuthorizedKeys) > 0 {
-		Println("WriteFile", AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, MarshalAuthorizedKeys(AuthorizedKeys...), FiLEMODE))
-	}
-
-	// for client
-	rest, err := os.ReadFile(Fns[KNOWN_HOSTS])
-	if err != nil {
-		Println(err)
-	} else {
-		var (
-			hosts  []string
-			pubKey ssh.PublicKey
-		)
-		for {
-			_, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
-			if err != nil {
-				break
-			}
-			if len(hosts) > 0 && hosts[0] == "*" {
-				Println(Fns[KNOWN_HOSTS], FingerprintSHA256(pubKey))
-				KnownKeys = append(KnownKeys, pubKey)
-			}
-		}
-	}
+	AuthorizedKeys = append(AuthorizedKeys, Signer.PublicKey())
 
 	CertCheck = &ssh.CertChecker{
-		IsHostAuthority: func(p ssh.PublicKey, _ string) bool { return gl.KeysEqual(p, Signer.PublicKey()) },
-		HostKeyFallback: sshlib.HostKeyCallback(KnownKeys...),
+		IsHostAuthority: func(p ssh.PublicKey, addr string) bool {
+			return gl.KeysEqual(p, Signer.PublicKey())
+		},
+		// HostKeyFallback: sshlib.HostKeyCallback(KnownKeys...),
 	}
 
 	Coms, So, Cncb = GetDetailedPortsList()
@@ -729,7 +698,7 @@ func GenerateSigner(pri string) (gl.Signer, error) {
 			Bytes: Bytes,
 		})
 		if data != nil {
-			os.WriteFile(pri, data, FiLEMODE)
+			os.WriteFile(pri, data, FILEMODE)
 		}
 
 		Bytes, err = x509.MarshalPKIXPublicKey(&key.PublicKey)
@@ -739,7 +708,7 @@ func GenerateSigner(pri string) (gl.Signer, error) {
 				Bytes: Bytes,
 			})
 
-			os.WriteFile(pri+".pub", data, FiLEMODE)
+			os.WriteFile(pri+".pub", data, FILEMODE)
 		}
 	}
 

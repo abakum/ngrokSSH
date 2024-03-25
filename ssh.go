@@ -79,7 +79,7 @@ func client(user, host, port, _ string) {
 			fmt.Sprintf(`%s%s%s %s@%s%s`,
 				quote(Fns[XTTY]),
 				sA,
-				pp("load", Imag, !(IsCert && IsOSSH)),
+				pp("load", Imag, !(IsCert || !IsOSSH)),
 				user,
 				host,
 				pp("P", port, port == "22"),
@@ -94,7 +94,7 @@ func client(user, host, port, _ string) {
 		}
 		items = append(items, func(index int, pressed rune) string {
 			return mOMenu(index, pressed,
-				fmt.Sprintf(`%s%s %s@%s%s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), Fns[KNOWN_HOSTS]),
+				fmt.Sprintf(`%s%s %s@%s%s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), UserKnownHostsFile),
 				user, host, port, true)
 		})
 	}
@@ -269,7 +269,7 @@ func mO(user, host, port string, O bool) {
 	if A {
 		opts = append(opts, "-A")
 	}
-	if !O && IsCert && IsOSSH {
+	if !O && (IsCert || !IsOSSH) {
 		opts = append(opts,
 			"-load",
 			Imag,
@@ -292,7 +292,7 @@ func mO(user, host, port string, O bool) {
 		sshExe = OpenSSH
 		opts = append(opts,
 			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", Fns[KNOWN_HOSTS]),
+			fmt.Sprintf("UserKnownHostsFile=%s", UserKnownHostsFile),
 		)
 	}
 	ki := exec.Command(sshExe, opts...)
@@ -361,7 +361,6 @@ func ska(con *sshlib.Connect) {
 
 func sshTry(u, h, p string) (err error) {
 	ltf.Printf("%s@%s:%s\n", u, h, p)
-	// Println("SignersLen", len(Signers))
 	for _, signer := range Signers {
 		config := ssh.ClientConfig{
 			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
@@ -371,9 +370,9 @@ func sshTry(u, h, p string) (err error) {
 		client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
 		if err == nil {
 			client.Close()
-			// Println(i, FingerprintSHA256(signer.PublicKey()))
 			IsCert = strings.HasSuffix(signer.PublicKey().Type(), "-cert-v01@openssh.com")
 			AuthMethods = config.Auth
+			Println("Authorized", FingerprintSHA256(signer.PublicKey()))
 			return nil
 		}
 	}
@@ -406,13 +405,15 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 	if len(ss) < 2 {
 		Println(fmt.Errorf("no keys from agent %v", err))
 	}
+
+	sshUserDir := filepath.Join(os.Getenv("USERPROFILE"), ".ssh")
+	UserKnownHostsFile = filepath.Join(sshUserDir, "known_ca")
+	os.MkdirAll(sshUserDir, 0700)
+
 	for i, idSigner := range ss {
 		signers = append(signers, idSigner)
 
 		pub := idSigner.PublicKey()
-
-		sshUserDir := filepath.Join(os.Getenv("USERPROFILE"), ".ssh")
-		os.MkdirAll(sshUserDir, 0700)
 
 		pref := "ca"
 		if i > 0 {
@@ -429,8 +430,11 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 		newPub := err != nil || !bytes.Equal(data, old)
 		newCA := newPub && i == 0
 		if newPub {
-			Println(os.WriteFile(name, data, FiLEMODE))
-			if i == 0 { //ca
+			Println(name, os.WriteFile(name, data, FILEMODE))
+			if i == 0 { // ca.pub know_ca
+				bb := bytes.NewBufferString("@cert-authority * ")
+				bb.Write(data)
+				Println(UserKnownHostsFile, os.WriteFile(UserKnownHostsFile, bb.Bytes(), FILEMODE))
 				// for putty ...they_verify_me_by_certificate
 				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
 					`SOFTWARE\SimonTatham\PuTTY\SshHostCAs\`+Imag,
@@ -472,10 +476,11 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 		signers = append(signers, certSigner)
 
 		if newCA || newPub {
-			certPub := filepath.Join(sshUserDir, pref+"-cert.pub")
-			err = os.WriteFile(certPub,
+			name = filepath.Join(sshUserDir, pref+"-cert.pub")
+			err = os.WriteFile(name,
 				ssh.MarshalAuthorizedKey(&certificate),
-				FiLEMODE)
+				FILEMODE)
+			Println(name, err)
 			if i == 1 {
 				if err == nil {
 					// for I_verify_them_by_certificate_they_verify_me_by_certificate
@@ -484,13 +489,13 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 						`SOFTWARE\SimonTatham\PuTTY\Sessions\`+Imag,
 						registry.CREATE_SUB_KEY|registry.SET_VALUE)
 					if err == nil {
-						rk.SetStringValue("DetachedCertificate", certPub)
+						rk.SetStringValue("DetachedCertificate", name)
+						rk.SetDWordValue("WarnOnClose", 0)
+						rk.SetDWordValue("FullScreenOnAltEnter", 1)
 						rk.Close()
 					} else {
 						Println(err)
 					}
-				} else {
-					Println(err)
 				}
 				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
 					`SOFTWARE\SimonTatham\PuTTY\Sessions\Default%20Settings`,
@@ -644,6 +649,7 @@ func cgi(c *sshlib.Connect, cc, opt string, port int) (hphp []string, err error)
 	var bs []byte
 	bs, err = c.Output(cc, false)
 	if err != nil {
+		// Println(cc, hphp, bs, err)
 		return
 	}
 	h, p, err := net.SplitHostPort(strings.Split(string(bs), "\n")[0])

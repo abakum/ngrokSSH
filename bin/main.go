@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -10,16 +9,13 @@ import (
 	"internal/tool"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/crypto/ssh"
 )
 
 func main() {
 	const (
-		ROOT        = "bin"
-		FiLEMODE    = 0644
-		CA          = "kitty.rnd"
-		KNOWN_HOSTS = "known_hosts.ini"
+		ROOT     = "bin"
+		FILEMODE = 0644
+		CA       = "kitty.rnd"
 	)
 	flag.Parse()
 	tool.Priv(flag.Arg(0), flag.Arg(1))
@@ -38,20 +34,7 @@ func main() {
 	data, err := x509.MarshalPKCS8PrivateKey(key)
 	Panic(err)
 
-	err = os.WriteFile(name, data, FiLEMODE)
-	Panic(err)
-
-	PublicKey, err := ssh.NewPublicKey(&key.PublicKey)
-	Panic(err)
-
-	bb := bytes.NewBufferString("@cert-authority * ")
-	caPub := ssh.MarshalAuthorizedKey(PublicKey)
-	bb.Write(caPub)
-
-	// bb.WriteString("* ")
-	// bb.Write(caPub)
-
-	err = os.WriteFile(filepath.Join(wd, ROOT, KNOWN_HOSTS), bb.Bytes(), FiLEMODE)
+	err = os.WriteFile(name, data, FILEMODE)
 	Panic(err)
 }
 

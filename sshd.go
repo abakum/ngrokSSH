@@ -115,7 +115,7 @@ func server() {
 	}
 	if listenaddress == Hp {
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
-		Println(certHost(Signer, Imag))
+		Println("certHost", certHost(Signer, Imag))
 
 		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, Hp)
 		if NgrokHasTunnel || !NgrokOnline {
@@ -179,26 +179,29 @@ func server() {
 	publicKeyOption := gl.PublicKeyAuth(func(ctx gl.Context, key gl.PublicKey) bool {
 		Println("User", ctx.User(), "from", ctx.RemoteAddr())
 		Println("key", FingerprintSHA256(key))
+		if Authorized(key, AuthorizedKeys) {
+			return true
+		}
 
 		cert, ok := key.(*ssh.Certificate)
 		if !ok {
-			AuthorizedKeys = KeyFromClient(key, AuthorizedKeys) //from first user
-			return Authorized(key, AuthorizedKeys)
+			return false
 		}
 		// next for certificate of client
 		if cert.CertType != ssh.UserCert {
 			Println(fmt.Errorf("ssh: cert has type %d", cert.CertType))
-			return Authorized(key, AuthorizedKeys)
+			return false
 		}
 		if !gl.KeysEqual(cert.SignatureKey, Signer.PublicKey()) {
 			Println(fmt.Errorf("ssh: certificate signed by unrecognized authority %s", FingerprintSHA256(cert.SignatureKey)))
-			return Authorized(key, AuthorizedKeys)
+			return false
 		}
 		if err := CertCheck.CheckCert(Imag, cert); err != nil { //ctx.User()
 			Println(err)
-			return Authorized(key, AuthorizedKeys)
+			return false
 		}
 		//  cert.Permissions
+		Println("Authorized by certificate of", FingerprintSHA256(cert.SignatureKey))
 		return true
 
 	})
@@ -297,7 +300,7 @@ func certHost(caSigner ssh.Signer, id string) (err error) {
 	old, err := os.ReadFile(TrustedUserCAKeys)
 	newCA := err != nil || !bytes.Equal(data, old)
 	if newCA {
-		os.WriteFile(TrustedUserCAKeys, data, FiLEMODE)
+		os.WriteFile(TrustedUserCAKeys, data, FILEMODE)
 	}
 
 	sshHostKeyPub := sshHostKey + ".pub"
@@ -344,7 +347,7 @@ func certHost(caSigner ssh.Signer, id string) (err error) {
 		return
 	}
 	data = ssh.MarshalAuthorizedKey(&certificate)
-	err = os.WriteFile(HostCertificate, data, FiLEMODE)
+	err = os.WriteFile(HostCertificate, data, FILEMODE)
 	if err != nil {
 		return
 	}
@@ -354,14 +357,14 @@ func certHost(caSigner ssh.Signer, id string) (err error) {
 Match Group administrators
 AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys
 `
-	err = os.WriteFile(include, []byte(s), FiLEMODE)
+	err = os.WriteFile(include, []byte(s), FILEMODE)
 	if err != nil {
 		return
 	}
 	Println("Insert to __PROGRAMDATA__/ssh/sshd_config line `Include I_verify_them_by_key_they_verify_me_by_certificate`")
 
 	include = filepath.Join(sshHostDir, "authorized_principals")
-	err = os.WriteFile(include, []byte(id), FiLEMODE)
+	err = os.WriteFile(include, []byte(id), FILEMODE)
 	if err != nil {
 		return
 	}
@@ -371,7 +374,7 @@ AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys
 AuthorizedPrincipalsFile __PROGRAMDATA__/ssh/authorized_principals
 HostCertificate __PROGRAMDATA__/ssh/host_certificate
 `
-	err = os.WriteFile(include, []byte(s), FiLEMODE)
+	err = os.WriteFile(include, []byte(s), FILEMODE)
 	Println("or insert to __PROGRAMDATA__/ssh/sshd_config line `I_verify_them_by_certificate_they_verify_me_by_certificate`")
 	return
 }
@@ -646,19 +649,9 @@ func isListen(host string, port int, pid int) (ok bool) {
 func Authorized(key gl.PublicKey, authorized []ssh.PublicKey) bool {
 	for _, k := range authorized {
 		if gl.KeysEqual(key, k) {
+			Println("Authorized")
 			return true
 		}
 	}
 	return false
-}
-
-// case no files and not embed then write from first client
-func KeyFromClient(key gl.PublicKey, old []ssh.PublicKey) []ssh.PublicKey {
-	if len(old) > 0 {
-		return old
-	}
-	// only first login
-	ltf.Println("KeyFromClient", FingerprintSHA256(key))
-	Println("WriteFile", AuthorizedKeysIni, os.WriteFile(AuthorizedKeysIni, ssh.MarshalAuthorizedKey(key), FiLEMODE))
-	return []ssh.PublicKey{key}
 }
