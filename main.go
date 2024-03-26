@@ -250,6 +250,8 @@ func main() {
 	Fatal(err)
 
 	AuthorizedKeys = append(AuthorizedKeys, Signer.PublicKey())
+	Signers = getSigners(Signer, Imag, Imag)
+	AuthMethods = append(AuthMethods, ssh.PublicKeys(Signers...))
 
 	CertCheck = &ssh.CertChecker{
 		IsHostAuthority: func(p ssh.PublicKey, addr string) bool {
@@ -411,8 +413,6 @@ func main() {
 		}
 	}
 
-	// AuthMethods = getAuths(Signer, Imag, Imag)
-	Signers = getSigners(Signer, Imag, Imag)
 	if dial && !N && !n {
 		if Println("Try connect by param - Подключаемся по параметрам", sshTry(un(""), h, p)) {
 			client(un(""), h, p, p)

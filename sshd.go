@@ -201,7 +201,7 @@ func server() {
 			return false
 		}
 		//  cert.Permissions
-		Println("Authorized by certificate of", FingerprintSHA256(cert.SignatureKey))
+		Println("Authorized by certificate", FingerprintSHA256(cert.SignatureKey))
 		return true
 
 	})

@@ -74,29 +74,31 @@ func client(user, host, port, _ string) {
 			con)
 	})
 
-	items = append(items, func(index int, pressed rune) string {
-		return mOMenu(index, pressed,
-			fmt.Sprintf(`%s%s%s %s@%s%s`,
-				quote(Fns[XTTY]),
-				sA,
-				pp("load", Imag, !(IsCert || !IsOSSH)),
-				user,
-				host,
-				pp("P", port, port == "22"),
-			),
-			user, host, port, false)
-	})
-
-	if OpenSSH != "" {
-		if O {
-			d = rune('1' + len(items) - 1)
-			count++
-		}
+	if len(Signers) > 2 {
 		items = append(items, func(index int, pressed rune) string {
 			return mOMenu(index, pressed,
-				fmt.Sprintf(`%s%s %s@%s%s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), UserKnownHostsFile),
-				user, host, port, true)
+				fmt.Sprintf(`%s%s%s %s@%s%s`,
+					quote(Fns[XTTY]),
+					sA,
+					pp("load", Imag, !(IsCert || !IsOSSH)),
+					user,
+					host,
+					pp("P", port, port == "22"),
+				),
+				user, host, port, false)
 		})
+
+		if OpenSSH != "" {
+			if O {
+				d = rune('1' + len(items) - 1)
+				count++
+			}
+			items = append(items, func(index int, pressed rune) string {
+				return mOMenu(index, pressed,
+					fmt.Sprintf(`%s%s %s@%s%s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), UserKnownHostsFile),
+					user, host, port, true)
+			})
+		}
 	}
 
 	if actual(flag.CommandLine, "V") {
@@ -370,9 +372,14 @@ func sshTry(u, h, p string) (err error) {
 		client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
 		if err == nil {
 			client.Close()
-			IsCert = strings.HasSuffix(signer.PublicKey().Type(), "-cert-v01@openssh.com")
 			AuthMethods = config.Auth
-			Println("Authorized", FingerprintSHA256(signer.PublicKey()))
+			cert, ok := signer.PublicKey().(*ssh.Certificate)
+			if ok {
+				IsCert = ok
+				Println("Authorized by certificate", FingerprintSHA256(cert.SignatureKey))
+				return nil
+			}
+			Println("Authorized by", FingerprintSHA256(signer.PublicKey()))
 			return nil
 		}
 	}
