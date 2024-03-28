@@ -49,6 +49,7 @@ import (
 	"github.com/abakum/embed-encrypt/encryptedfs"
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
+	_ "github.com/abakum/version"
 	"github.com/abakum/winssh"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
@@ -58,7 +59,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-//go:generate .\ver.cmd
+//go:generate go run github.com/abakum/version
 //go:generate go run bin/main.go
 //go:generate go run github.com/abakum/embed-encrypt
 
