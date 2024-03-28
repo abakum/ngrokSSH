@@ -4,14 +4,14 @@ go 1.21.4
 
 replace internal/tool => ./internal/tool
 
-replace github.com/abakum/embed-encrypt => ../embed-encrypt
+// replace github.com/abakum/embed-encrypt => ../embed-encrypt
 
 replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 v1.2.6
 
 require (
 	github.com/Desuuuu/windrive v0.2.2
 	github.com/Microsoft/go-winio v0.6.1
-	github.com/abakum/embed-encrypt v0.0.0-20240309090251-5db710414591
+	github.com/abakum/embed-encrypt v0.0.0-20240328140803-53a11ea38670
 	github.com/abakum/go-ansiterm v0.0.0-20240209124652-4fc46d492442
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
 	github.com/abakum/go-sshlib v0.0.11-lw

@@ -58,8 +58,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+//go:generate .\ver.cmd
 //go:generate go run bin/main.go
-
 //go:generate go run github.com/abakum/embed-encrypt
 
 const (
