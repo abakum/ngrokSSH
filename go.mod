@@ -11,13 +11,14 @@ replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 
 require (
 	github.com/Desuuuu/windrive v0.2.2
 	github.com/Microsoft/go-winio v0.6.1
-	github.com/abakum/embed-encrypt v0.0.0-20240328140803-53a11ea38670
+	github.com/abakum/embed-encrypt v0.0.0-20240330115809-059354cfa29a
 	github.com/abakum/go-ansiterm v0.0.0-20240209124652-4fc46d492442
 	github.com/abakum/go-netstat v0.0.0-20231106075911-001f10558dcf
 	github.com/abakum/go-sshlib v0.0.11-lw
 	github.com/abakum/menu v0.0.0-20240209213529-cf43393155b2
 	github.com/abakum/pageant v0.0.0-20240210190511-4450a30bb403
 	github.com/abakum/proxy v0.0.6-lw
+	github.com/abakum/version v0.0.6-lw
 	github.com/abakum/winssh v0.0.0-20240210184859-e6228961ea04
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
 	github.com/gliderlabs/ssh v0.3.6
@@ -27,7 +28,7 @@ require (
 	go.bug.st/serial v1.6.1
 	golang.ngrok.com/ngrok v1.7.0
 	golang.org/x/crypto v0.19.0
-	golang.org/x/sys v0.17.0
+	golang.org/x/sys v0.18.0
 	gopkg.in/ini.v1 v1.67.0
 	internal/tool v0.0.0-00010101000000-000000000000
 )
@@ -35,9 +36,8 @@ require (
 require (
 	github.com/ScaleFT/sshkeys v1.2.0 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.5 // indirect
-	github.com/abakum/go-console v0.0.0-20231203133515-5d1e7fd8831f // indirect
+	github.com/abakum/go-console v0.0.0-20240331141302-a7e7a5804946 // indirect
 	github.com/abakum/term v0.0.0-20240212164236-135562d7e4cf // indirect
-	github.com/abakum/version v0.0.6-lw // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/creack/goselect v0.1.2 // indirect

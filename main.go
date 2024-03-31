@@ -62,6 +62,7 @@ import (
 //go:generate go run github.com/abakum/version
 //go:generate go run bin/main.go
 //go:generate go run github.com/abakum/embed-encrypt
+// go:generate go list -f '{{.EmbedFiles}}'
 
 const (
 	PORT     = "22"

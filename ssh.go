@@ -362,6 +362,7 @@ func ska(con *sshlib.Connect) {
 }
 
 func sshTry(u, h, p string) (err error) {
+	var client *ssh.Client
 	ltf.Printf("%s@%s:%s\n", u, h, p)
 	for _, signer := range Signers {
 		config := ssh.ClientConfig{
@@ -369,7 +370,7 @@ func sshTry(u, h, p string) (err error) {
 			HostKeyCallback: CertCheck.CheckHostKey,
 			User:            u,
 		}
-		client, err := ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
+		client, err = ssh.Dial("tcp", net.JoinHostPort(h, p), &config)
 		if err == nil {
 			client.Close()
 			AuthMethods = config.Auth
