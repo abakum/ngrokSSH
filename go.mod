@@ -10,9 +10,9 @@ replace internal/tool => ./internal/tool
 
 replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 v1.2.6
 
-replace github.com/abakum/winssh => ../winssh
+// replace github.com/abakum/winssh => ../winssh
 
-replace github.com/abakum/go-console => ../go-console
+// replace github.com/abakum/go-console => ../go-console
 
 require (
 	github.com/Desuuuu/windrive v0.2.2
