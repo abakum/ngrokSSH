@@ -5,8 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"io"
-	"io/fs"
 	"log"
 	"net"
 	"net/url"
@@ -43,75 +41,6 @@ func server() {
 	listenaddress, sshdExe := la(SSHD, 22)
 	if listenaddress != "" {
 		go established(ctxRWE, sshdExe)
-	}
-	if listenaddress == Hp || Hp == "0.0.0.0:22" {
-		Once.Do(func() {
-			var (
-				exe string
-				err error
-				ExeInfo,
-				SymlinkInfo fs.FileInfo
-				src,
-				dst *os.File
-				written int64
-			)
-			if !HardExe { // copy
-				ExeInfo, err = os.Stat(Exe)
-				if err != nil {
-					Println(Exe, err)
-					return
-				}
-				src, err = os.Open(Exe)
-				if err != nil {
-					Println(Exe, err)
-					return
-				}
-				defer src.Close()
-
-			}
-			for _, dir := range filepath.SplitList(os.Getenv("Path")) {
-				if !HardPath(Drives, dir) {
-					continue
-				}
-				Symlink := filepath.Join(dir, Image)
-				if HardExe {
-					Println("os.Symlink", Exe, Symlink)
-					exe, err = os.Readlink(Symlink)
-					if os.IsNotExist(err) {
-						err = os.Symlink(Exe, Symlink)
-					} else {
-						err = nil
-						if exe != Exe {
-							err = os.Remove(Symlink)
-							if err == nil {
-								err = os.Symlink(Exe, Symlink)
-							}
-						}
-					}
-				} else {
-					SymlinkInfo, err = os.Stat(Symlink)
-					if !(err == nil && ExeInfo.ModTime().Unix() > SymlinkInfo.ModTime().Unix()) {
-						Println("io.Copy", Symlink, Exe)
-						dst, err = os.Create(Symlink)
-						if err != nil {
-							Println(Symlink, err)
-							continue
-						}
-						defer dst.Close()
-						written, err = io.Copy(dst, src)
-						if err != nil || written != ExeInfo.Size() {
-							dst.Close()
-							Println(Symlink, err)
-							continue
-						}
-					}
-				}
-				Println(Symlink, err)
-				if err == nil {
-					return
-				}
-			}
-		})
 	}
 	if listenaddress == Hp {
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
@@ -213,22 +142,11 @@ func server() {
 		defer s.Exit(0)
 		clientVersion := s.Context().ClientVersion()
 		ltf.Println(clientVersion)
-		switch 1 {
-		case 1:
-			if len(s.Command()) > 1 {
-				base := filepath.Base(s.Command()[0])
-				bas := strings.Split(base, ".")[0]
-				if strings.EqualFold(bas, Imag) {
-					ret, res := rtv(s.Command()[1])
-					if ret {
-						if res == CGIR {
-							caRW()
-						} else {
-							fmt.Fprint(s, res)
-						}
-						return
-					}
-				}
+		if len(s.Command()) > 1 {
+			base := filepath.Base(s.Command()[0])
+			bas := strings.Split(base, ".")[0]
+			if strings.EqualFold(bas, Imag) && s.Command()[1] == CGIR {
+				caRW()
 			}
 		}
 		if !strings.Contains(clientVersion, OSSH) {
@@ -238,6 +156,7 @@ func server() {
 				s.Write([]byte(title))
 			})
 		}
+		Println(len(s.Command()), s.Command(), s.RawCommand())
 		winssh.ShellOrExec(s)
 	})
 

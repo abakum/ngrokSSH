@@ -4,9 +4,15 @@ go 1.21.4
 
 replace internal/tool => ./internal/tool
 
+// replace github.com/abakum/version => ../version
+
 // replace github.com/abakum/embed-encrypt => ../embed-encrypt
 
 replace github.com/ThalesIgnite/crypto11 v1.2.5 => github.com/blacknon/crypto11 v1.2.6
+
+replace github.com/abakum/winssh => ../winssh
+
+replace github.com/abakum/go-console => ../go-console
 
 require (
 	github.com/Desuuuu/windrive v0.2.2
@@ -18,8 +24,7 @@ require (
 	github.com/abakum/menu v0.0.0-20240209213529-cf43393155b2
 	github.com/abakum/pageant v0.0.0-20240210190511-4450a30bb403
 	github.com/abakum/proxy v0.0.6-lw
-	github.com/abakum/version v0.0.6-lw
-	github.com/abakum/winssh v0.0.0-20240210184859-e6228961ea04
+	github.com/abakum/winssh v0.0.0-20240415133556-bafe6ee0f83e
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
 	github.com/gliderlabs/ssh v0.3.6
 	github.com/mitchellh/go-ps v1.0.0

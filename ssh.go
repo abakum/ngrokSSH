@@ -45,10 +45,13 @@ func client(user, host, port, _ string) {
 	VisitAll(title)
 
 	con := &sshlib.Connect{
-		ForwardAgent:    A,
-		TTY:             true,
-		HostKeyCallback: CertCheck.CheckHostKey,
-		Version:         banner(),
+		ForwardAgent:        A,
+		TTY:                 true,
+		HostKeyCallback:     CertCheck.CheckHostKey,
+		Version:             banner(),
+		KnownHostsFiles:     []string{filepath.Join(UserHomeDirs(".ssh"), "known_hosts")},
+		CheckKnownHosts:     !KnownHostByCert,
+		OverwriteKnownHosts: !KnownHostByCert,
 	}
 
 	// con.ConnectSshAgent()
@@ -74,13 +77,13 @@ func client(user, host, port, _ string) {
 			con)
 	})
 
-	if len(Signers) > 2 {
+	if len(Signers) > 2 { // есть ключи от агента
 		items = append(items, func(index int, pressed rune) string {
 			return mOMenu(index, pressed,
 				fmt.Sprintf(`%s%s%s %s@%s%s`,
 					quote(Fns[XTTY]),
 					sA,
-					pp("load", Imag, !(IsCert || !IsOSSH)),
+					pp("load", Imag, !AuthByCert),
 					user,
 					host,
 					pp("P", port, port == "22"),
@@ -95,7 +98,7 @@ func client(user, host, port, _ string) {
 			}
 			items = append(items, func(index int, pressed rune) string {
 				return mOMenu(index, pressed,
-					fmt.Sprintf(`%s%s %s@%s%s -o UserKnownHostsFile="%s"`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), UserKnownHostsFile),
+					fmt.Sprintf(`%s%s %s@%s%s%s`, quote(OpenSSH), sA, user, host, pp("p", port, port == "22"), pp("o", fmt.Sprintf(`UserKnownHostsFile="%s"`, UserKnownHostsFile), !KnownHostByCert)),
 					user, host, port, true)
 			})
 		}
@@ -116,10 +119,9 @@ func client(user, host, port, _ string) {
 		Println(cmd("Start", vab), vab.Start())
 	}
 
+	COMSPEC := comspec(con) // not empty for windows
 	for _, o := range V {
-		s := Image + " " + CGIV
-		hphp, e := cgi(con, s, o, RFB)
-		Println(s, strings.Join(hphp, ":"), e)
+		hphp, e := cgi(con, COMSPEC, o, RFB)
 		if e != nil {
 			continue
 		}
@@ -170,9 +172,7 @@ func client(user, host, port, _ string) {
 			count++
 		}
 		for _, o := range T {
-			s := Image + " " + CGIT
-			hphp, e := cgi(con, s, o, RFC2217)
-			Println(s, strings.Join(hphp, ":"), e)
+			hphp, e := cgi(con, COMSPEC, o, RFC2217)
 			if e != nil {
 				continue
 			}
@@ -271,7 +271,7 @@ func mO(user, host, port string, O bool) {
 	if A {
 		opts = append(opts, "-A")
 	}
-	if !O && (IsCert || !IsOSSH) {
+	if !O && AuthByCert {
 		opts = append(opts,
 			"-load",
 			Imag,
@@ -292,10 +292,12 @@ func mO(user, host, port string, O bool) {
 	sshExe := Fns[XTTY]
 	if O {
 		sshExe = OpenSSH
-		opts = append(opts,
-			"-o",
-			fmt.Sprintf("UserKnownHostsFile=%s", UserKnownHostsFile),
-		)
+		if KnownHostByCert {
+			opts = append(opts,
+				"-o",
+				fmt.Sprintf("UserKnownHostsFile=%s", UserKnownHostsFile),
+			)
+		}
 	}
 	ki := exec.Command(sshExe, opts...)
 	if O {
@@ -362,11 +364,18 @@ func ska(con *sshlib.Connect) {
 }
 
 func sshTry(u, h, p string) (err error) {
+	KnownHostByCert = true
 	var client *ssh.Client
 	ltf.Printf("%s@%s:%s\n", u, h, p)
-	for _, signer := range Signers {
+	for i, signers := range [][]ssh.Signer{CertSigners, AgentSigners} {
+		s := "agent"
+		AuthByCert = i == 0
+		if AuthByCert {
+			s = "certificate"
+		}
+		Println("Try authorized by", s)
 		config := ssh.ClientConfig{
-			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+			Auth:            []ssh.AuthMethod{ssh.PublicKeys(signers...)},
 			HostKeyCallback: CertCheck.CheckHostKey,
 			User:            u,
 		}
@@ -374,20 +383,20 @@ func sshTry(u, h, p string) (err error) {
 		if err == nil {
 			client.Close()
 			AuthMethods = config.Auth
-			cert, ok := signer.PublicKey().(*ssh.Certificate)
-			if ok {
-				IsCert = ok
-				Println("Authorized by certificate", FingerprintSHA256(cert.SignatureKey))
-				return nil
+			for _, signer := range signers {
+				Println(FingerprintSHA256(signer.PublicKey()))
 			}
-			Println("Authorized by", FingerprintSHA256(signer.PublicKey()))
 			return nil
 		}
 	}
 	return
 }
 
-func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Signer) {
+// возвращаем сигнеров ЦС, от агента, и сертификаты от агента
+// пишем ветку реестра SshHostCAs для putty клиента и файл UserKnownHostsFile для ssh клиента чтоб они доверяли хосту по сертификату от ЦС caSigner
+// если новый ключ ЦС или новый ключ от агента пишем сертификат в файл для ssh клиента и ссылку на него в реестр для putty клиента чтоб хост с ngrokSSH им доверял
+func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Signer, userKnownHostsFile string) {
+	// разрешения для сертификата пользователя
 	var permits = make(map[string]string)
 	for _, permit := range []string{
 		"X11-forwarding",
@@ -410,13 +419,12 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 			ss = append(ss, eas...)
 		}
 	}
+	// в ss ключ ЦС caSigner и ключи от агента
 	if len(ss) < 2 {
-		Println(fmt.Errorf("no keys from agent %v", err))
+		Println(fmt.Errorf("no keys from agent - не получены ключи от агента %v", err))
 	}
-
-	sshUserDir := filepath.Join(os.Getenv("USERPROFILE"), ".ssh")
-	UserKnownHostsFile = filepath.Join(sshUserDir, "known_ca")
-	os.MkdirAll(sshUserDir, 0700)
+	sshUserDir := UserHomeDirs(".ssh")
+	userKnownHostsFile = filepath.Join(sshUserDir, "known_ca")
 
 	for i, idSigner := range ss {
 		signers = append(signers, idSigner)
@@ -439,11 +447,13 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 		newCA := newPub && i == 0
 		if newPub {
 			Println(name, os.WriteFile(name, data, FILEMODE))
-			if i == 0 { // ca.pub know_ca
+			if i == 0 { // ca.pub know_ca idSigner is caSigner
 				bb := bytes.NewBufferString("@cert-authority * ")
 				bb.Write(data)
-				Println(UserKnownHostsFile, os.WriteFile(UserKnownHostsFile, bb.Bytes(), FILEMODE))
+				// пишем файл UserKnownHostsFile для ssh клиента чтоб он доверял хосту по сертификату ЦС caSigner
+				Println(userKnownHostsFile, os.WriteFile(userKnownHostsFile, bb.Bytes(), FILEMODE))
 				// for putty ...they_verify_me_by_certificate
+				// пишем ветку реестра SshHostCAs для putty клиента чтоб он доверял хосту по сертификату ЦС caSigner
 				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
 					`SOFTWARE\SimonTatham\PuTTY\SshHostCAs\`+Imag,
 					registry.CREATE_SUB_KEY|registry.SET_VALUE)
@@ -481,44 +491,60 @@ func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Sign
 		if err != nil {
 			continue
 		}
+		// добавляем сертификат в слайс результата signers
 		signers = append(signers, certSigner)
 
 		if newCA || newPub {
+			//если новый ключ ЦС или новый ключ от агента пишем сертификат в файл для ssh клиента и ссылку на него в реестр для putty клиента
 			name = filepath.Join(sshUserDir, pref+"-cert.pub")
 			err = os.WriteFile(name,
 				ssh.MarshalAuthorizedKey(&certificate),
 				FILEMODE)
 			Println(name, err)
 			if i == 1 {
+				// пишем ссылку на один сертификат (первый) в ветку реестра ngrokSSH для putty клиента
 				if err == nil {
 					// for I_verify_them_by_certificate_they_verify_me_by_certificate
 					// PuTTY -load ngrokSSH user@host
-					rk, _, err := registry.CreateKey(registry.CURRENT_USER,
-						`SOFTWARE\SimonTatham\PuTTY\Sessions\`+Imag,
-						registry.CREATE_SUB_KEY|registry.SET_VALUE)
-					if err == nil {
-						rk.SetStringValue("DetachedCertificate", name)
-						rk.SetDWordValue("WarnOnClose", 0)
-						rk.SetDWordValue("FullScreenOnAltEnter", 1)
-						rk.Close()
-					} else {
-						Println(err)
-					}
+					forPutty(`SOFTWARE\SimonTatham\PuTTY\Sessions\`+Imag, name)
 				}
-				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
-					`SOFTWARE\SimonTatham\PuTTY\Sessions\Default%20Settings`,
-					registry.CREATE_SUB_KEY|registry.SET_VALUE)
-				if err == nil {
-					rk.SetDWordValue("WarnOnClose", 0)
-					rk.SetDWordValue("FullScreenOnAltEnter", 1)
-					rk.Close()
-				} else {
-					Println(err)
-				}
+				// PuTTY user@host
+				forPutty(`SOFTWARE\SimonTatham\PuTTY\Sessions\Default%20Settings`, "")
 			}
 		}
 	}
 	return
+}
+
+// упрямый вариант
+func UserHomeDirs(dirs ...string) (s string) {
+	var err error
+	s, err = os.UserHomeDir()
+	if err != nil {
+		s, err = os.UserConfigDir()
+		if err != nil {
+			s, _ = os.MkdirTemp("", "UserDir")
+		}
+	}
+	dirs = append([]string{s}, dirs...)
+	s = filepath.Join(dirs...)
+	os.MkdirAll(s, 0700)
+	return
+}
+
+// пишем сертификат name в ветку реестра ngrokSSH для putty клиента
+func forPutty(key, name string) {
+	rk, _, err := registry.CreateKey(registry.CURRENT_USER, key, registry.CREATE_SUB_KEY|registry.SET_VALUE)
+	if err != nil {
+		Println(err)
+	}
+	defer rk.Close()
+	if name != "" {
+		rk.SetStringValue("DetachedCertificate", name)
+	}
+	// за компанию
+	rk.SetDWordValue("WarnOnClose", 0)
+	rk.SetDWordValue("FullScreenOnAltEnter", 1)
 }
 
 func MarshalAuthorizedKey(key ssh.PublicKey) string {
@@ -644,24 +670,34 @@ func tryBindR(con *sshlib.Connect, hp ...string) (hphp []string, err error) {
 	return
 }
 
-func cgi(c *sshlib.Connect, cc, opt string, port int) (hphp []string, err error) {
+func cgi(c *sshlib.Connect, comspec, opt string, port int) (hphp []string, err error) {
 	hphp = parseHPHP(opt, port)
 	err = fmt.Errorf("empty")
-	if c == nil || cc == "" {
+	if c == nil {
 		return
 	}
-	if len(hphp) > 2 {
+	if len(hphp) > 2 { // manual
 		// L = append(L, strings.Join(hphp, ":"))
 		return tryBindL(c, hphp...)
 	}
+	var h, p, hp string
+	por := port / 10  // 590 227
+	if port%por > 0 { // 0 1
+		por = port //2271
+	}
+	cc := fmt.Sprintf("netstat -ltn|awk '$4~/:%d/&&$4!~/::/{print $4}'", por)
+	if comspec != "" {
+		// cc = fmt.Sprintf(`for /f "tokens=2" %%a in ('netstat -anp TCP^|findstr :%d^|findstr LIST') do @echo %%a`, por)
+		cc = fmt.Sprintf("netstat -anp TCP|findstr :%d|findstr LIST", por)
+	}
 	var bs []byte
 	bs, err = c.Output(cc, false)
-	if err != nil {
-		// Println(cc, hphp, bs, err)
-		return
+	if err == nil {
+		hp = strings.Split(string(bs), "\n")[0]
+		hp = strings.TrimRight(hp, ListSpace)
+		h, p, err = fromNetStat(hp, comspec != "")
 	}
-	h, p, err := net.SplitHostPort(strings.Split(string(bs), "\n")[0])
-	// Println(h, p, err)
+	Println(cc, h+":"+p, err)
 	if err != nil {
 		return
 	}
@@ -671,39 +707,62 @@ func cgi(c *sshlib.Connect, cc, opt string, port int) (hphp []string, err error)
 	return tryBindL(c, append(hphp, h, p)...)
 }
 
-// return h:p:h:p
+// for windows awk {print $2}
+func fromNetStat(s string, win bool) (host string, port string, err error) {
+	if win {
+		for {
+			if !strings.Contains(s, "  ") {
+				break
+			}
+			s = strings.ReplaceAll(s, "  ", " ")
+		}
+		ss := strings.Split(s, " ")
+		if len(ss) > 2 {
+			s = ss[2]
+		} else {
+			s = ""
+		}
+	}
+	return net.SplitHostPort(s)
+}
+
+// return h:p:h:p or h:p then need cgi
 func parseHPHP(opt string, port int) (res []string) {
 	bp := strconv.Itoa(port)
-	if opt == "" { // ""
-		opt = bp
+	if opt == "" {
+		opt = LH
 	}
 	hphp := strings.Split(opt, ":")
-	// h:p:h:p :p:h:p p:h:p p h
-	if len(hphp) > 0 && hphp[0] == "" { // ":" ""
+	if len(hphp) > 0 && hphp[0] == "" { // :
 		hphp[0] = LH
-	}
-	if len(hphp) > 1 && hphp[1] == "" { // :
-		hphp[1] = bp
 	}
 
 	_, er := strconv.Atoi(hphp[0])
-	if er == nil { // p...
+	if er == nil { // port
 		hphp = append([]string{LH}, hphp...)
-	} // h:p:h:p :p:h:p h:p h
+	}
+	// h:p:h:p || h:p || h
+	if len(hphp) > 1 && hphp[1] == "" {
+		hphp[1] = bp
+	}
+	if len(hphp) > 2 && hphp[2] == "" {
+		hphp[2] = LH
+	}
+	// Println(hphp, len(hphp))
 	switch {
 	case len(hphp) > 3: // h:p:h:p
-		if hphp[2] == "" { // ::
+		if hphp[2] == "" { // h:p: -> h:p:LH
 			hphp[2] = LH
 		}
-		if hphp[3] == "" { // :::
+		if hphp[3] == "" { // h:p:h: -> h:p:h:p
 			hphp[3] = hphp[1]
 		}
 		return hphp[:4]
-	case len(hphp) > 2: // h:p:h
-		return append(hphp, bp)
-	case len(hphp) > 1: // h:p
+	case len(hphp) > 2: // h:p:h -> h:p:h:p
+		return append(hphp, hphp[1])
+	case len(hphp) > 1: // h:p -> cgi
 		return hphp
-	default: // h
+	default: // h -> cgi
 		return append(hphp, bp)
 	}
 }
@@ -752,4 +811,19 @@ func Output(c *sshlib.Connect, cmd string, pty bool) (bs []byte, err error) {
 
 func Esc(b []byte) string {
 	return string(bytes.ReplaceAll(b, []byte{0x1b}, []byte{'~'}))
+}
+
+func comspec(con *sshlib.Connect) string {
+	const c = "%COMSPEC%"
+	var (
+		s   string
+		err error
+		bs  []byte
+	)
+	bs, err = con.Output("echo "+c, false)
+	s = strings.TrimRight(string(bs), ListSpace)
+	if err != nil || s == c {
+		return "" // !windows
+	}
+	return s
 }

@@ -1,6 +1,9 @@
+package main
+
 /*
 git clone https://github.com/abakum/ngrokSSH
 go mod init github.com/abakum/ngrokSSH
+
 go get github.com/abakum/go-console@latest
 go get github.com/abakum/winssh@latest
 go get github.com/abakum/go-netstat@latest
@@ -18,9 +21,9 @@ go get github.com/Desuuuu/windrive
 
 go get internal/tool
 go get github.com/abakum/embed-encrypt
+go get download github.com/abakum/version
 go mod tidy
 */
-package main
 
 import (
 	"bytes"
@@ -33,6 +36,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -49,7 +53,7 @@ import (
 	"github.com/abakum/embed-encrypt/encryptedfs"
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
-	_ "github.com/abakum/version"
+
 	"github.com/abakum/winssh"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
@@ -59,6 +63,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+//
 //go:generate go run github.com/abakum/version
 //go:generate go run bin/main.go
 //go:generate go run github.com/abakum/embed-encrypt
@@ -80,23 +85,24 @@ const (
 	HUB4COM  = "hub4com.exe"
 	SSHD     = "sshd.exe"
 	// XTTY            = "kitty_portable.exe"
-	XTTY     = "putty.exe"
-	REALVV   = "vncviewer.exe"
-	CGIV     = "-v"
-	CGIT     = "-t"
-	CGIR     = "-r"
-	MENU     = "Choose target for console - выбери цель подключения консоли"
-	FILEMODE = 0644
-	DIRMODE  = 0755
-	TOR      = time.Second * 15 //reconnect TO
-	TOW      = time.Second * 5  //watch TO
-	SOCKS5   = "1080"
-	HTTPX    = "3128"
-	B9600    = "9600"
-	MARK     = '('
-	SSH2     = "SSH-2.0-"
-	OSSH     = "OpenSSH_for_Windows"
-	KiTTY    = "KiTTY"
+	XTTY      = "putty.exe"
+	REALVV    = "vncviewer.exe"
+	CGIV      = "-v"
+	CGIT      = "-t"
+	CGIR      = "-r"
+	MENU      = "Choose target for console - выбери цель подключения консоли"
+	FILEMODE  = 0644
+	DIRMODE   = 0755
+	TOR       = time.Second * 15 //reconnect TO
+	TOW       = time.Second * 5  //watch TO
+	SOCKS5    = "1080"
+	HTTPX     = "3128"
+	B9600     = "9600"
+	MARK      = '('
+	SSH2      = "SSH-2.0-"
+	OSSH      = "OpenSSH_for_Windows"
+	KiTTY     = "KiTTY"
+	ListSpace = " \t\n\v\f\r\u0085\u00A0"
 )
 
 //encrypted:embed NGROK_AUTHTOKEN.txt
@@ -152,7 +158,8 @@ var (
 	serv,
 	PressEnter,
 	IsOSSH,
-	IsCert,
+	AuthByCert,
+	KnownHostByCert,
 	_ bool
 	IsKiTTY = strings.Contains(XTTY, strings.ToLower(KiTTY))
 
@@ -179,7 +186,9 @@ var (
 	Delay       = DELAY
 	CertCheck   *ssh.CertChecker
 	AuthMethods []ssh.AuthMethod
-	Signers     []ssh.Signer
+	Signers,
+	CertSigners,
+	AgentSigners []ssh.Signer
 )
 
 func main() {
@@ -202,30 +211,26 @@ func main() {
 
 	// CGI
 	if len(os.Args) == 2 {
-		ret, res := rtv(os.Args[1])
-		if ret {
-			if res == CGIR {
-				listenaddress, sshdExe := la(SSHD, 22)
-				if listenaddress != "" {
-					sshd := strings.Split(sshdExe, ".")[0]
-					restart := exec.Command("net.exe",
-						"stop",
-						sshd,
-					)
-					Println(cmd("Run", restart), restart.Run())
-					time.Sleep(TOW + time.Second)
-					restart = exec.Command("net.exe",
-						"start",
-						sshd,
-					)
-					Println(cmd("Run", restart), restart.Run())
-				}
-				Println(ngrokRestart(NgrokApiKey))
-				return
+		if os.Args[1] == CGIR {
+			listenaddress, sshdExe := la(SSHD, 22)
+			if listenaddress != "" {
+				sshd := strings.Split(sshdExe, ".")[0]
+				restart := exec.Command("net.exe",
+					"stop",
+					sshd,
+				)
+				Println(cmd("Run", restart), restart.Run())
+				time.Sleep(TOW + time.Second)
+				restart = exec.Command("net.exe",
+					"start",
+					sshd,
+				)
+				Println(cmd("Run", restart), restart.Run())
 			}
-			fmt.Print(res)
+			Println(ngrokRestart(NgrokApiKey))
 			return
 		}
+		return
 	}
 
 	Cwd, err = os.Getwd()
@@ -252,14 +257,37 @@ func main() {
 	Fatal(err)
 
 	AuthorizedKeys = append(AuthorizedKeys, Signer.PublicKey())
-	Signers = getSigners(Signer, Imag, Imag)
+	Signers, UserKnownHostsFile = getSigners(Signer, Imag, Imag)
 	AuthMethods = append(AuthMethods, ssh.PublicKeys(Signers...))
+	CertSigners = []ssh.Signer{}
+	AgentSigners = []ssh.Signer{}
+	for i, signer := range Signers {
+		_, ok := signer.PublicKey().(*ssh.Certificate)
+		if ok || i == 0 {
+			CertSigners = append(CertSigners, signer)
+		} else {
+			AgentSigners = append(AgentSigners, signer)
+		}
+	}
 
+	// for client
+	// knownKeys := getKnownKeys()
+
+	// HostKeyFallback, err := knownhosts.New(filepath.Join(UserHomeDirs(".ssh"), "known_hosts"))
+	// if err != nil {
+	// 	Println(err)
+	// }
 	CertCheck = &ssh.CertChecker{
 		IsHostAuthority: func(p ssh.PublicKey, addr string) bool {
 			return gl.KeysEqual(p, Signer.PublicKey())
 		},
-		// HostKeyFallback: sshlib.HostKeyCallback(KnownKeys...),
+		// HostKeyFallback: HostKeyCallback(knownKeys...),
+		// HostKeyFallback: HostKeyFallback,
+		HostKeyFallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			// Println(hostname, remote, FingerprintSHA256(key))
+			KnownHostByCert = false
+			return nil // InsecureIgnoreHostKey for trySSH
+		},
 	}
 
 	Coms, So, Cncb = GetDetailedPortsList()
@@ -449,6 +477,36 @@ func main() {
 	}
 }
 
+func getKnownKeys() (knownKeys []ssh.PublicKey) {
+	knownHosts := filepath.Join(UserHomeDirs(".ssh"), "known_hosts")
+	rest, err := os.ReadFile(knownHosts)
+	if err != nil {
+		Println(err)
+	} else {
+		Println(knownHosts)
+		var (
+			marker string
+			hosts  []string
+			pubKey ssh.PublicKey
+		)
+		for {
+			marker, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				continue
+			}
+			if marker != "" {
+				continue
+			}
+			Println(hosts, FingerprintSHA256(pubKey))
+			knownKeys = append(knownKeys, pubKey)
+		}
+	}
+	return
+}
+
 func psCount(name, parent string, ppid int) (count int) {
 	pes, err := ps.Processes()
 	if err != nil {
@@ -615,31 +673,6 @@ func MarshalAuthorizedKeys(AuthorizedKeys ...ssh.PublicKey) []byte {
 	return b.Bytes()
 }
 
-func rtv(s string) (ret bool, res string) {
-	switch s {
-	case CGIR: // ngrokSSH.exe -r
-		return true, CGIR
-	case CGIT: // ngrokSSH.exe -t
-		res, _ = la(HUB4COM, RFC2217)
-		return true, res
-	case CGIV: // ngrokSSH.exe -v
-		for _, exe := range []string{
-			"winvnc.exe",
-			"tvnserver.exe",
-			"winvnc4.exe",
-			"vncserver.exe",
-			"repeater.exe",
-		} {
-			res, _ = la(exe, RFB)
-			if res != "" {
-				return true, res
-			}
-		}
-		return true, res
-	}
-	return false, res
-}
-
 func HardPath(Drives []*windrive.Drive, path string) (hard bool) {
 	if len(Drives) < 1 || !(len(path) > 1 && path[1] == ':') {
 		return true //for linux
@@ -741,4 +774,29 @@ func GetHostKey(ssh string) (pri string) {
 
 func FingerprintSHA256(pubKey ssh.PublicKey) string {
 	return pubKey.Type() + " " + ssh.FingerprintSHA256(pubKey)
+}
+
+type hostKeys struct {
+	keys []ssh.PublicKey
+}
+
+func (f *hostKeys) check(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	Println(hostname, remote, FingerprintSHA256(key))
+	if len(f.keys) == 0 {
+		return fmt.Errorf("ssh: no required host keys")
+	}
+	for _, fKey := range f.keys {
+		if gl.KeysEqual(key, fKey) {
+			return nil
+		}
+		// Println(FingerprintSHA256(fKey))
+	}
+	return fmt.Errorf("ssh: no one host key from %d match %s", len(f.keys), FingerprintSHA256(key))
+}
+
+// HostKeyCallback returns a function for use in
+// ClientConfig.HostKeyCallback to accept specific host keys.
+func HostKeyCallback(keys ...ssh.PublicKey) ssh.HostKeyCallback {
+	hk := &hostKeys{keys}
+	return hk.check
 }

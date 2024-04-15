@@ -2,84 +2,147 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"type": "go",
+			"label": "go: build _",
+			"command": "build",
+			"args": [
+				"-C",
+				"${fileDirname}",
+				"-ldflags",
+				"-s -w",
+				"-trimpath",
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": {
+				"kind": "build",
+			}
+		},
+		{
+			"type": "go",
+			"label": "go: build file",
+			"command": "build",
+			"args": [
+				"-C",
+				"${fileDirname}",
+				"-ldflags",
+				"-s -w",
+				"-trimpath",
+				"${file}"
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": {
+				"kind": "build",
+			}
+		},
+		{
+			"type": "go",
+			"label": "go: build _ 386",
+			"command": "build",
+			"options": {
+				"env": {
+					"GOARCH": "386"
+				}
+			},
+			"args": [
+				"-C",
+				"${fileDirname}",
+				"-ldflags",
+				"-s -w",
+				"-trimpath",
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": {
+				"kind": "build",
+			}
+		},
+		{
+			"type": "go",
+			"label": "go: build file 386",
+			"command": "build",
+			"options": {
+				"env": {
+					"GOARCH": "386"
+				}
+			},
+			"args": [
+				"-C",
+				"${fileDirname}",
+				"-ldflags",
+				"-s -w",
+				"-trimpath",
+				"${file}"
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": {
+				"kind": "build",
+			}
+		},
+		{
+			"type": "go",
+			"label": "go: build _ amd64",
+			"command": "build",
+			"options": {
+				"env": {
+					"GOARCH": "amd64"
+				}
+			},
+			"args": [
+				"-C",
+				"${fileDirname}",
+				"-ldflags",
+				"-s -w",
+				"-trimpath",
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": {
+				"kind": "build",
+			},
+		},
+		{
+			"type": "go",
+			"label": "go: build file amd64",
+			"command": "build",
+			"options": {
+				"env": {
+					"GOARCH": "amd64"
+				}
+			},
+			"args": [
+				"-C",
+				"${fileDirname}",
+				"-ldflags",
+				"-s -w",
+				"-trimpath",
+				"${file}"
+			],
+			"problemMatcher": [
+				"$go"
+			],
+			"group": {
+				"kind": "build",
+			},
+		},
+		{
 			"type": "shell",
-			"label": "go-winres make",
+			"label": "winres make",
 			"command": "go-winres make --product-version=git-tag --file-version=git-tag",
 			"group": "build"
 		},
 		{
 			"type": "shell",
-			"label": "GOARCH=386;ver.cmd;go build ./...",
-			"command": "./ver.cmd;go build ./...",
-			"options": {
-				"env": {
-					"GOARCH": "386"
-				}
-			},
-			"problemMatcher": [
-				"$go"
-			],
+			"label": "ver.cmd",
+			"command": "./ver.cmd",
 			"group": "build"
-		},
-		{
-			"type": "shell",
-			"label": "$GOARCH=386;cd ${fileDirname};go build .",
-			"command": "cd ${fileDirname};go build .",
-			"options": {
-				"env": {
-					"GOARCH": "386"
-				}
-			},
-			"problemMatcher": [
-				"$go"
-			],
-			"group": "build"
-		},
-		{
-			"type": "shell",
-			"label": "GOARCH=386;ver.cmd;go install",
-			"command": "./ver.cmd;go build -o r:\\PortableApps\\ngrokVNC",
-			"options": {
-				"env": {
-					"GOARCH": "386"
-				}
-			},
-			"problemMatcher": [
-				"$go"
-			],
-			"group": "build"
-		},
-		{
-			"type": "shell",
-			"label": "ver.cmd;go build ./...",
-			"command": "./ver.cmd;go build ./...",
-			"problemMatcher": [
-				"$go"
-			],
-			"group": "build"
-		},
-		{
-			"type": "shell",
-			"label": "go run ./...",
-			"command": "go run ./...",
-			"problemMatcher": [
-				"$go"
-			],
-			"group": "build"
-		},
-		{
-			"type": "shell",
-			"label": "GOARCH=386;go run ./...",
-			"command": "go run ./...",
-			"options": {
-				"env": {
-					"GOARCH": "386"
-				}
-			},
-			"problemMatcher": [
-				"$go"
-			],
-			"group": "build"
-		},
+		}
 	]
 }
