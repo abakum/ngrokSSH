@@ -24,6 +24,7 @@ require (
 	github.com/abakum/menu v0.0.0-20240209213529-cf43393155b2
 	github.com/abakum/pageant v0.0.0-20240210190511-4450a30bb403
 	github.com/abakum/proxy v0.0.6-lw
+	github.com/abakum/version v0.1.2-lw
 	github.com/abakum/winssh v0.0.0-20240415133556-bafe6ee0f83e
 	github.com/f1bonacc1/glippy v0.0.0-20230614190937-e7ca07f99f6f
 	github.com/gliderlabs/ssh v0.3.6

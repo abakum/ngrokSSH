@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
 	"log"
 	"net"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -44,8 +42,6 @@ func server() {
 	}
 	if listenaddress == Hp {
 		// to prevent disconnect by idle set `ClientAliveInterval 100`
-		Println("certHost", certHost(Signer, Imag))
-
 		li.Printf("%s daemon waiting on - %s сервер ожидает на %s\n", sshdExe, sshdExe, Hp)
 		if NgrokHasTunnel || !NgrokOnline {
 			li.Printf("LAN mode of %s daemon  - Локальный режим %s сервера\n", sshdExe, sshdExe)
@@ -204,100 +200,6 @@ func certSigner(caSigner, hostSigner ssh.Signer, id string) ssh.Signer {
 	return certSigner
 }
 
-func certHost(caSigner ssh.Signer, id string) (err error) {
-	// ssh-keygen -s ca -I ngrokSSH -h -V always:forever c:\ProgramData\ssh\ssh_host_ecdsa_key.pub
-	// move c:\ProgramData\ssh\ssh_host_ecdsa_key-cert.pub c:\ProgramData\ssh\host_certificate
-	sshHostKey := GetHostKey("")
-	if sshHostKey == "" {
-		return fmt.Errorf("not found OpenSSH keys")
-	}
-	//type ca.pub>>c:\ProgramData\ssh\trusted_user_ca_keys
-	sshHostDir := filepath.Dir(sshHostKey)
-	TrustedUserCAKeys := filepath.Join(sshHostDir, "trusted_user_ca_keys")
-	ca := caSigner.PublicKey()
-	data := ssh.MarshalAuthorizedKey(ca)
-	old, err := os.ReadFile(TrustedUserCAKeys)
-	newCA := err != nil || !bytes.Equal(data, old)
-	if newCA {
-		os.WriteFile(TrustedUserCAKeys, data, FILEMODE)
-	}
-
-	sshHostKeyPub := sshHostKey + ".pub"
-	pub, err := os.Stat(sshHostKeyPub)
-	if err != nil {
-		return
-	}
-	in, err := os.ReadFile(sshHostKeyPub)
-	if err != nil {
-		return
-	}
-	out, _, _, _, err := ssh.ParseAuthorizedKey(in)
-	if err != nil {
-		out, err = ssh.ParsePublicKey(in)
-	}
-	if err != nil {
-		return
-	}
-	HostCertificate := filepath.Join(sshHostDir, "host_certificate")
-	cert, err := os.Stat(HostCertificate)
-	newPub := true
-	if err == nil {
-		newPub = cert.ModTime().Unix() < pub.ModTime().Unix()
-	}
-	if !(newCA || newPub) {
-		return nil
-	}
-
-	//newCA || newPub
-	mas, err := ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner), []string{ca.Type()})
-	if err != nil {
-		return
-	}
-	certificate := ssh.Certificate{
-		Key:         out,
-		CertType:    ssh.HostCert,
-		KeyId:       id,
-		ValidBefore: ssh.CertTimeInfinity,
-		// ValidAfter:  uint64(time.Now().Unix()),
-		// ValidBefore: uint64(time.Now().AddDate(1, 0, 0).Unix()),
-	}
-	err = certificate.SignCert(rand.Reader, mas)
-	if err != nil {
-		return
-	}
-	data = ssh.MarshalAuthorizedKey(&certificate)
-	err = os.WriteFile(HostCertificate, data, FILEMODE)
-	if err != nil {
-		return
-	}
-
-	include := filepath.Join(sshHostDir, "I_verify_them_by_key_they_verify_me_by_certificate")
-	s := `HostCertificate __PROGRAMDATA__/ssh/host_certificate
-Match Group administrators
-AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys
-`
-	err = os.WriteFile(include, []byte(s), FILEMODE)
-	if err != nil {
-		return
-	}
-	Println("Insert to __PROGRAMDATA__/ssh/sshd_config line `Include I_verify_them_by_key_they_verify_me_by_certificate`")
-
-	include = filepath.Join(sshHostDir, "authorized_principals")
-	err = os.WriteFile(include, []byte(id), FILEMODE)
-	if err != nil {
-		return
-	}
-
-	include = filepath.Join(sshHostDir, "I_verify_them_by_certificate_they_verify_me_by_certificate")
-	s = `TrustedUserCAKeys __PROGRAMDATA__/ssh/trusted_user_ca_keys
-AuthorizedPrincipalsFile __PROGRAMDATA__/ssh/authorized_principals
-HostCertificate __PROGRAMDATA__/ssh/host_certificate
-`
-	err = os.WriteFile(include, []byte(s), FILEMODE)
-	Println("or insert to __PROGRAMDATA__/ssh/sshd_config line `I_verify_them_by_certificate_they_verify_me_by_certificate`")
-	return
-}
-
 func CutSSH2(s string) string {
 	after, _ := strings.CutPrefix(s, SSH2)
 	return after
@@ -313,8 +215,8 @@ func un(ru string) (u string) {
 	if u == "" {
 		u = ru
 	}
-	if u == "" {
-		u = os.Getenv("USERNAME")
+	if u == "" || u == "_" {
+		u = userName()
 	}
 	return
 }
@@ -323,6 +225,9 @@ func use(hp string) (s string) {
 	h, p, _ := net.SplitHostPort(hp)
 	if p == PORT {
 		p = ""
+	}
+	if h == LH && p == "" {
+		return fmt.Sprintf("`%s _@`", Image)
 	}
 	if h != ALL {
 		return fmt.Sprintf("`%s`", strings.Trim(Image+" "+un("")+"@"+net.JoinHostPort(h, p), " :"))

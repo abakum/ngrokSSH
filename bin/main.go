@@ -15,7 +15,7 @@ func main() {
 	const (
 		ROOT     = "bin"
 		FILEMODE = 0644
-		CA       = "kitty.rnd"
+		CA       = "randomseed"
 	)
 	flag.Parse()
 	tool.Priv(flag.Arg(0), flag.Arg(1))

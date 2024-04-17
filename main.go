@@ -54,6 +54,7 @@ import (
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
 
+	version "github.com/abakum/version/lib"
 	"github.com/abakum/winssh"
 	gl "github.com/gliderlabs/ssh"
 	"github.com/mitchellh/go-ps"
@@ -61,9 +62,12 @@ import (
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/sys/windows/registry"
 )
 
-//
+var _ = version.Ver
+
 //go:generate go run github.com/abakum/version
 //go:generate go run bin/main.go
 //go:generate go run github.com/abakum/embed-encrypt
@@ -76,33 +80,31 @@ const (
 	RFC2217  = 2217
 	RFB      = 5900
 	EMULATOR = "com0com - serial port emulator"
-	COM0COM  = "https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download"
+	COM0COM  = "https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download" // signed
 	ROOT     = "bin"
 	LIMIT    = "1"
 	ITO      = "10"
 	XO       = "on"
 	DELAY    = "0.05"
-	HUB4COM  = "hub4com.exe"
-	SSHD     = "sshd.exe"
-	// XTTY            = "kitty_portable.exe"
-	XTTY      = "putty.exe"
-	REALVV    = "vncviewer.exe"
-	CGIV      = "-v"
-	CGIT      = "-t"
-	CGIR      = "-r"
-	MENU      = "Choose target for console - выбери цель подключения консоли"
-	FILEMODE  = 0644
-	DIRMODE   = 0755
-	TOR       = time.Second * 15 //reconnect TO
-	TOW       = time.Second * 5  //watch TO
-	SOCKS5    = "1080"
-	HTTPX     = "3128"
-	B9600     = "9600"
-	MARK      = '('
-	SSH2      = "SSH-2.0-"
-	OSSH      = "OpenSSH_for_Windows"
-	KiTTY     = "KiTTY"
-	ListSpace = " \t\n\v\f\r\u0085\u00A0"
+	HUB4COM  = "hub4com.exe" // unSigned https://sourceforge.net/projects/com0com/files/hub4com/
+	// XTTY            = "kitty_portable.exe" // unSigned https://github.com/cyd01/KiTTY
+	XTTY     = "putty.exe"     // signed https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html
+	REALVV   = "vncviewer.exe" // signed http://www.oldversion.com/windows/realvnc-5-0-4
+	SSHD     = "sshd.exe"      // signed https://github.com/PowerShell/Win32-OpenSSH/releases
+	CGIR     = "-r"
+	MENU     = "Choose target for console - выбери цель подключения консоли"
+	FILEMODE = 0644
+	DIRMODE  = 0755
+	TOR      = time.Second * 15 //reconnect TO
+	TOW      = time.Second * 5  //watch TO
+	SOCKS5   = "1080"
+	HTTPX    = "3128"
+	B9600    = "9600"
+	MARK     = '('
+	SSH2     = "SSH-2.0-"
+	OSSH     = "OpenSSH_for_Windows"
+	KiTTY    = "KiTTY"
+	Spaces   = " \t\n\v\f\r\u0085\u00A0"
 )
 
 //encrypted:embed NGROK_AUTHTOKEN.txt
@@ -111,7 +113,7 @@ var NgrokAuthToken string
 //encrypted:embed NGROK_API_KEY.txt
 var NgrokApiKey string
 
-//encrypted:embed bin/kitty.rnd
+//encrypted:embed bin/randomseed
 var CA []byte
 
 //encrypted:embed bin/*.exe bin/Sessions/Default%20Settings bin/AB/*
@@ -151,8 +153,6 @@ var (
 	X,
 	a,
 	r,
-	t,
-	v,
 	n,
 	dial,
 	serv,
@@ -230,7 +230,6 @@ func main() {
 			Println(ngrokRestart(NgrokApiKey))
 			return
 		}
-		return
 	}
 
 	Cwd, err = os.Getwd()
@@ -310,20 +309,18 @@ func main() {
 	flag.Var(&V, "V", fmt.Sprintf("local port forwarding for - перенос ближнего порта для `VNC` like -L\nexample - пример  `%s -V 5901`", Image))
 	if runtime.GOOS == "windows" {
 		flag.BoolVar(&X, "X", X, fmt.Sprintf("set by - устанавливать с помощью `setX` all_proxy\nexample - пример `%s -X`", Image))
-		Drives, _ = windrive.List()
-		HardExe = HardPath(Drives, Exe)
+		// Drives, _ = windrive.List()
+		// HardExe = HardPath(Drives, Exe)
 	}
 	a = menu.IsAnsi()
 	flag.BoolVar(&a, "a", a, fmt.Sprintf("`ansi` sequence enabled console - консоль поддерживает ansi последовательности\nexample - пример `%s -a` or `%s -a=false`", Image, Image))
 	flag.StringVar(&Baud, "b", B9600, fmt.Sprintf("serial console `baud` - скорость последовательной консоли\nexample - пример `%s -b 115200` or `%s -b 1`", Image, Image))
 	flag.BoolVar(&h, "h", h, fmt.Sprintf("show `help` for usage - показать использование параметров\nexample - пример `%s -h`", Image))
-	flag.StringVar(&Ln, "l", "", fmt.Sprintf("`login` name as `ssh -l ln`\nexample - пример `%s -l root 192.168.0.1:2222` or `%s root@192.168.0.1:2222`", Image, Image))
+	flag.StringVar(&Ln, "l", "", fmt.Sprintf("`login` name as `ssh -l ln`\nexample - пример `%s -l root 192.168.0.1:2222` or `%s root@192.168.0.1:2222` or `%s _@` where `_` as %%USERNAME%%", Image, Image, Image))
 	flag.BoolVar(&n, "n", false, fmt.Sprintf("do not use `ngrok` for dial - использовать режим LAN\nexample - пример `%s -n` or `%s .`", Image, Image))
 	flag.StringVar(&sp, "p", PORT, fmt.Sprintf("ssh `port` as `ssh -p port ln@host` or `sshd -p port`\nexample - пример `%s -p 2222` or `%s -p 2222 root@192.168.0.1`", Image, Image))
 	flag.BoolVar(&r, "r", false, fmt.Sprintf("`restart` daemon - перезапустить сервер\nexample - пример `%s -r`", Image))
 	flag.StringVar(&So, "s", So, fmt.Sprintf("`serial` port for console - последовательный порт для консоли\nexample - пример `%s -s 11`", Image))
-	flag.BoolVar(&t, "t", false, fmt.Sprintf("get binding of serial port over `telnet` daemon - где слушает сервер последовательного порта `hub4com`\nexample - пример `%s -t`", Image))
-	flag.BoolVar(&v, "v", false, fmt.Sprintf("get binding of `VNC` daemon - где слушает сервер VNC\nexample - пример `%s -v`", Image))
 	flag.Parse()
 
 	if h {
@@ -799,4 +796,236 @@ func (f *hostKeys) check(hostname string, remote net.Addr, key ssh.PublicKey) er
 func HostKeyCallback(keys ...ssh.PublicKey) ssh.HostKeyCallback {
 	hk := &hostKeys{keys}
 	return hk.check
+}
+
+// Возвращаем сигнеров от агента, и сертификаты от агента и самоподписанный сертификат ЦС.
+// Пишем ветку реестра SshHostCAs для putty клиента и файл UserKnownHostsFile для ssh клиента чтоб они доверяли хосту по сертификату от ЦС caSigner.
+// Если новый ключ ЦС (.ssh/ca.pub) или новый ключ от агента пишем сертификат в файл для ssh клиента и ссылку на него в реестр для putty клиента чтоб хост с ngrokSSH им доверял.
+// Если новый ключ ЦС пишем конфиги и сертифкаты для sshd от OpenSSH чтоб sshd доверял клиентам ngrokSSH, putty, ssh.
+func getSigners(caSigner ssh.Signer, id string, user string) (signers []ssh.Signer, userKnownHostsFile string) {
+	// разрешения для сертификата пользователя
+	var permits = make(map[string]string)
+	for _, permit := range []string{
+		"X11-forwarding",
+		"agent-forwarding",
+		"port-forwarding",
+		"pty",
+		"user-rc",
+	} {
+		permits["permit-"+permit] = ""
+	}
+
+	ss := []ssh.Signer{caSigner}
+	// agent
+	rw, err := NewConn()
+	if err == nil {
+		defer rw.Close()
+		ea := agent.NewClient(rw)
+		eas, err := ea.Signers()
+		if err == nil {
+			ss = append(ss, eas...)
+		}
+	}
+	// в ss ключ ЦС caSigner и ключи от агента
+	if len(ss) < 2 {
+		Println(fmt.Errorf("no keys from agent - не получены ключи от агента %v", err))
+	}
+	sshUserDir := UserHomeDirs(".ssh")
+	userKnownHostsFile = filepath.Join(sshUserDir, "known_ca")
+	newCA := false
+	for i, idSigner := range ss {
+		signers = append(signers, idSigner)
+
+		pub := idSigner.PublicKey()
+
+		pref := "ca"
+		if i > 0 {
+			t := strings.TrimPrefix(pub.Type(), "ssh-")
+			if strings.HasPrefix(t, "ecdsa") {
+				t = "ecdsa"
+			}
+			pref = "id_" + t
+		}
+
+		data := ssh.MarshalAuthorizedKey(pub)
+		name := filepath.Join(sshUserDir, pref+".pub")
+		old, err := os.ReadFile(name)
+		newPub := err != nil || !bytes.Equal(data, old)
+		if i == 0 {
+			newCA = newPub
+			if newCA {
+				certHost(caSigner, Imag)
+			}
+		}
+		if newPub {
+			Println(name, os.WriteFile(name, data, FILEMODE))
+			if i == 0 { // ca.pub know_ca idSigner is caSigner
+				bb := bytes.NewBufferString("@cert-authority * ")
+				bb.Write(data)
+				// пишем файл UserKnownHostsFile для ssh клиента чтоб он доверял хосту по сертификату ЦС caSigner
+				Println(userKnownHostsFile, os.WriteFile(userKnownHostsFile, bb.Bytes(), FILEMODE))
+				// for putty ...they_verify_me_by_certificate
+				// пишем ветку реестра SshHostCAs для putty клиента чтоб он доверял хосту по сертификату ЦС caSigner
+				rk, _, err := registry.CreateKey(registry.CURRENT_USER,
+					`SOFTWARE\SimonTatham\PuTTY\SshHostCAs\`+Imag,
+					registry.CREATE_SUB_KEY|registry.SET_VALUE)
+				if err == nil {
+					rk.SetStringValue("PublicKey", strings.TrimSpace(strings.TrimPrefix(string(data), pub.Type())))
+					rk.SetStringValue("Validity", "*")
+					rk.SetDWordValue("PermitRSASHA1", 0)
+					rk.SetDWordValue("PermitRSASHA256", 1)
+					rk.SetDWordValue("PermitRSASHA512", 1)
+					rk.Close()
+				} else {
+					Println(err)
+				}
+			}
+		}
+		mas, err := ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner),
+			[]string{caSigner.PublicKey().Type()})
+		if err != nil {
+			continue
+		}
+		//ssh-keygen -s ca -I id -n user -V always:forever ~\.ssh\id_*.pub
+		certificate := ssh.Certificate{
+			Key:             idSigner.PublicKey(),
+			CertType:        ssh.UserCert,
+			KeyId:           id,
+			ValidBefore:     ssh.CertTimeInfinity,
+			ValidPrincipals: []string{user},
+			Permissions:     ssh.Permissions{Extensions: permits},
+		}
+		if certificate.SignCert(rand.Reader, mas) != nil {
+			continue
+		}
+
+		certSigner, err := ssh.NewCertSigner(&certificate, idSigner)
+		if err != nil {
+			continue
+		}
+		// добавляем сертификат в слайс результата signers
+		signers = append(signers, certSigner)
+
+		if newCA || newPub {
+			//если новый ключ ЦС или новый ключ от агента пишем сертификат в файл для ssh клиента и ссылку на него в реестр для putty клиента
+			name = filepath.Join(sshUserDir, pref+"-cert.pub")
+			err = os.WriteFile(name,
+				ssh.MarshalAuthorizedKey(&certificate),
+				FILEMODE)
+			Println(name, err)
+			if i == 1 {
+				// пишем ссылку на один сертификат (первый) в ветку реестра ngrokSSH для putty клиента
+				if err == nil {
+					// for I_verify_them_by_certificate_they_verify_me_by_certificate
+					// PuTTY -load ngrokSSH user@host
+					forPutty(`SOFTWARE\SimonTatham\PuTTY\Sessions\`+Imag, name)
+				}
+				// PuTTY user@host
+				forPutty(`SOFTWARE\SimonTatham\PuTTY\Sessions\Default%20Settings`, "")
+			}
+		}
+	}
+	return
+}
+
+// Если установлен sshd от OpenSSH обновляем TrustedUserCAKeys (ssh/trusted_user_ca_keys) и HostCertificate.
+// Пишем конфиг I_verify_them_by_key_they_verify_me_by_certificate.
+// Пишем конфиг I_verify_them_by_certificate_they_verify_me_by_certificate.
+// Предлагаем включить один из этих конфигов в __PROGRAMDATA__/ssh/sshd_config.
+func certHost(caSigner ssh.Signer, id string) (err error) {
+	// ssh-keygen -s ca -I ngrokSSH -h -V always:forever c:\ProgramData\ssh\ssh_host_ecdsa_key.pub
+	// move c:\ProgramData\ssh\ssh_host_ecdsa_key-cert.pub c:\ProgramData\ssh\host_certificate
+	sshHostKey := GetHostKey("")
+	if sshHostKey == "" {
+		return fmt.Errorf("not found OpenSSH keys")
+	}
+	//type ca.pub>>c:\ProgramData\ssh\trusted_user_ca_keys
+	sshHostDir := filepath.Dir(sshHostKey)
+	TrustedUserCAKeys := filepath.Join(sshHostDir, "trusted_user_ca_keys")
+	ca := caSigner.PublicKey()
+	data := ssh.MarshalAuthorizedKey(ca)
+	old, err := os.ReadFile(TrustedUserCAKeys)
+	newCA := err != nil || !bytes.Equal(data, old)
+	if newCA {
+		Println(TrustedUserCAKeys, os.WriteFile(TrustedUserCAKeys, data, FILEMODE))
+	}
+
+	sshHostKeyPub := sshHostKey + ".pub"
+	pub, err := os.Stat(sshHostKeyPub)
+	if err != nil {
+		return
+	}
+	in, err := os.ReadFile(sshHostKeyPub)
+	if err != nil {
+		return
+	}
+	out, _, _, _, err := ssh.ParseAuthorizedKey(in)
+	if err != nil {
+		out, err = ssh.ParsePublicKey(in)
+	}
+	if err != nil {
+		return
+	}
+	HostCertificate := filepath.Join(sshHostDir, "host_certificate")
+	cert, err := os.Stat(HostCertificate)
+	newPub := true
+	if err == nil {
+		newPub = cert.ModTime().Unix() < pub.ModTime().Unix()
+	}
+	if !(newCA || newPub) {
+		return nil
+	}
+
+	//newCA || newPub
+	mas, err := ssh.NewSignerWithAlgorithms(caSigner.(ssh.AlgorithmSigner), []string{ca.Type()})
+	if err != nil {
+		return
+	}
+	certificate := ssh.Certificate{
+		Key:         out,
+		CertType:    ssh.HostCert,
+		KeyId:       id,
+		ValidBefore: ssh.CertTimeInfinity,
+		// ValidAfter:  uint64(time.Now().Unix()),
+		// ValidBefore: uint64(time.Now().AddDate(1, 0, 0).Unix()),
+	}
+	err = certificate.SignCert(rand.Reader, mas)
+	if err != nil {
+		return
+	}
+	data = ssh.MarshalAuthorizedKey(&certificate)
+	err = os.WriteFile(HostCertificate, data, FILEMODE)
+	Println(HostCertificate, err)
+	if err != nil {
+		return
+	}
+
+	include := filepath.Join(sshHostDir, "I_verify_them_by_key_they_verify_me_by_certificate")
+	s := `HostCertificate __PROGRAMDATA__/ssh/host_certificate
+Match Group administrators
+AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys
+`
+	err = os.WriteFile(include, []byte(s), FILEMODE)
+	Println(include, err)
+	if err != nil {
+		return
+	}
+	Println("Insert to __PROGRAMDATA__/ssh/sshd_config line `Include I_verify_them_by_key_they_verify_me_by_certificate`.")
+
+	include = filepath.Join(sshHostDir, "authorized_principals")
+	err = os.WriteFile(include, []byte(id), FILEMODE)
+	Println(include, err)
+	if err != nil {
+		return
+	}
+
+	include = filepath.Join(sshHostDir, "I_verify_them_by_certificate_they_verify_me_by_certificate")
+	s = `TrustedUserCAKeys __PROGRAMDATA__/ssh/trusted_user_ca_keys
+AuthorizedPrincipalsFile __PROGRAMDATA__/ssh/authorized_principals
+HostCertificate __PROGRAMDATA__/ssh/host_certificate
+`
+	err = os.WriteFile(include, []byte(s), FILEMODE)
+	Println(include, err)
+	Println("Or insert to __PROGRAMDATA__/ssh/sshd_config line `I_verify_them_by_certificate_they_verify_me_by_certificate`.")
+	return
 }

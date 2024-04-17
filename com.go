@@ -6,6 +6,9 @@ import (
 )
 
 func com(hphp []string, so string) {
+	if so == "0" {
+		return
+	}
 	opts := []string{"--baud=75",
 		"--interface=" + hphp[0],
 		"--create-filter=escparse,com,parse",
