@@ -17,7 +17,6 @@ go get github.com/pkg/sftp
 go get golang.ngrok.com/ngrok@v1.7.0
 go get github.com/ngrok/ngrok-api-go/v5
 go get github.com/mitchellh/go-ps
-go get github.com/Desuuuu/windrive
 
 go get internal/tool
 go get github.com/abakum/embed-encrypt
@@ -36,7 +35,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -46,10 +44,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/Desuuuu/windrive"
 	"github.com/abakum/embed-encrypt/encryptedfs"
 	"github.com/abakum/menu"
 	"github.com/abakum/proxy"
@@ -180,9 +176,6 @@ var (
 	Signer  gl.Signer //ca
 	KnownKeys,
 	AuthorizedKeys []ssh.PublicKey
-	Drives      []*windrive.Drive
-	HardExe     = true // for linux symlink
-	Once        sync.Once
 	Delay       = DELAY
 	CertCheck   *ssh.CertChecker
 	AuthMethods []ssh.AuthMethod
@@ -201,7 +194,7 @@ func main() {
 		sp string
 		err error
 	)
-	NgrokAuthToken = Getenv(NGROK_AUTHTOKEN, NgrokAuthToken) //create ngrok
+	NgrokAuthToken = Getenv(NGROK_AUTHTOKEN, NgrokAuthToken) //create ngrok tunnel
 	NgrokApiKey = Getenv(NGROK_API_KEY, NgrokApiKey)         //use ngrok
 
 	Exe, err = os.Executable()
@@ -232,7 +225,8 @@ func main() {
 		}
 	}
 
-	Cwd, err = os.Getwd()
+	// Cwd, err = os.Getwd()
+	Cwd, err = os.UserHomeDir()
 
 	Fatal(err)
 	RealReset()
@@ -252,6 +246,7 @@ func main() {
 
 	key, err := x509.ParsePKCS8PrivateKey(CA)
 	Fatal(err)
+
 	Signer, err = ssh.NewSignerFromKey(key)
 	Fatal(err)
 
@@ -474,36 +469,6 @@ func main() {
 	}
 }
 
-func getKnownKeys() (knownKeys []ssh.PublicKey) {
-	knownHosts := filepath.Join(UserHomeDirs(".ssh"), "known_hosts")
-	rest, err := os.ReadFile(knownHosts)
-	if err != nil {
-		Println(err)
-	} else {
-		Println(knownHosts)
-		var (
-			marker string
-			hosts  []string
-			pubKey ssh.PublicKey
-		)
-		for {
-			marker, hosts, pubKey, _, rest, err = ssh.ParseKnownHosts(rest)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				continue
-			}
-			if marker != "" {
-				continue
-			}
-			Println(hosts, FingerprintSHA256(pubKey))
-			knownKeys = append(knownKeys, pubKey)
-		}
-	}
-	return
-}
-
 func psCount(name, parent string, ppid int) (count int) {
 	pes, err := ps.Processes()
 	if err != nil {
@@ -668,20 +633,6 @@ func MarshalAuthorizedKeys(AuthorizedKeys ...ssh.PublicKey) []byte {
 		_, _ = b.Write(ssh.MarshalAuthorizedKey(pubKey))
 	}
 	return b.Bytes()
-}
-
-func HardPath(Drives []*windrive.Drive, path string) (hard bool) {
-	if len(Drives) < 1 || !(len(path) > 1 && path[1] == ':') {
-		return true //for linux
-	}
-	for _, drive := range Drives {
-		for _, partition := range drive.Partitions {
-			if !partition.Removable && strings.HasPrefix(strings.ToUpper(path), partition.Path) {
-				return true
-			}
-		}
-	}
-	return
 }
 
 func RealReset() {
